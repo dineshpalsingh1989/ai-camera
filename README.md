@@ -11,7 +11,7 @@ and quality inspection (anomaly detection, e.g. egg lines). Runs fully on the ed
 
 ```
 python -m venv .venv
-.venv/Scripts/pip install flask requests opencv-python "opencv-python<5" numpy ultralytics   # Linux: .venv/bin/pip
+.venv/Scripts/pip install flask requests "opencv-python<5" numpy ultralytics   # Linux: .venv/bin/pip
 .venv/Scripts/python app.py
 ```
 
