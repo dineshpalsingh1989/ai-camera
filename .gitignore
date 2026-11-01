@@ -1,0 +1,16 @@
+# secrets: camera passwords, dashboard login, Telegram token
+settings.json
+
+# runtime data
+stats.json
+events/
+inspect/
+training/
+__pycache__/
+*.log
+
+# downloaded / generated (re-created automatically or by make_demo_eggs.py)
+.venv/
+weights/
+demo-videos/
+*.pt

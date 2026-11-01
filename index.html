@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Camera</title>
+<style>
+  :root { --bg:#0b0d12; --panel:#141821; --panel2:#1b2030; --line:#262c3b; --text:#e7eaf0; --muted:#8a93a6;
+          --accent:#4f8cff; --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b; --violet:#a855f7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  a { color:inherit; }
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:14px; padding:10px 16px;
+           border-bottom:1px solid var(--line); background:rgba(20,24,33,.95); backdrop-filter:blur(6px); flex-wrap:wrap; }
+  .logo { font-weight:700; font-size:17px; display:flex; gap:8px; align-items:center; }
+  .logo i { width:12px; height:12px; border-radius:50%; background:var(--bad); box-shadow:0 0 10px var(--bad); animation:pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav button { background:none; border:0; color:var(--muted); padding:7px 12px; cursor:pointer; font-size:14px; border-radius:8px; }
+  nav button.active { color:var(--text); background:var(--panel2); }
+  .spacer { flex:1; }
+  .pill { padding:3px 10px; border-radius:99px; font-size:12px; background:var(--panel2); white-space:nowrap; }
+  .pill.ok { background:#123b22; color:#a7f3c0; } .pill.bad { background:#4c1515; color:#fecaca; }
+  #clock { color:var(--muted); font-variant-numeric:tabular-nums; }
+  main { padding:16px; max-width:1800px; margin:0 auto; }
+  .hidden { display:none !important; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:16px; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .kpi small { color:var(--muted); display:block; } .kpi b { font-size:26px; font-variant-numeric:tabular-nums; }
+  .live { display:grid; grid-template-columns:1fr 320px; gap:16px; }
+  @media (max-width:1000px) { .live { grid-template-columns:1fr; } }
+  .grid { display:grid; grid-template-columns:repeat(var(--cols, 2), 1fr); gap:12px; align-content:start; }
+  @media (max-width:700px) { .grid { grid-template-columns:1fr !important; } }
+  .tile, .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .tile-head, .tile-foot { display:flex; align-items:center; gap:6px; padding:8px 10px; flex-wrap:wrap; }
+  .tile-foot.counts { flex-wrap:nowrap; overflow:hidden; min-height:38px; }
+  .btn.on { background:#4a2c07; border-color:#f59e0b; } .chip.paused { background:#3f3f46; color:#e4e4e7; }
+  .tile-head b { margin-right:auto; }
+  .view { position:relative; background:#000; }
+  .view img { width:100%; display:block; aspect-ratio:16/9; object-fit:contain; }
+  .rec { position:absolute; top:8px; right:8px; background:var(--bad); color:#fff; font-size:12px; font-weight:700; padding:2px 8px; border-radius:6px; animation:pulse 1s infinite; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); flex:none; } .dot.on { background:var(--ok); }
+  .chip { background:var(--panel2); padding:2px 8px; border-radius:99px; font-size:12px; white-space:nowrap; }
+  .chip.alert { background:#4c1515; color:#fecaca; } .chip.motion { background:#4a2c07; color:#fde68a; }
+  .chip.ai { background:#1e2b52; color:#bfd3ff; } .chip.zone { background:#2e1a4a; color:#e9d5ff; }
+  .card { padding:14px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin:0 0 12px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .btn { background:var(--panel2); color:var(--text); border:1px solid var(--line); padding:6px 12px; border-radius:8px; cursor:pointer; font-size:13px; text-decoration:none; display:inline-block; }
+  .btn:hover { border-color:var(--accent); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; } .btn.danger { background:#4c1515; border-color:#6b1d1d; }
+  .feed { max-height:72vh; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+  .ev-row { display:flex; gap:10px; align-items:center; cursor:pointer; padding:4px; border-radius:8px; }
+  .ev-row:hover { background:var(--panel2); }
+  .ev-row img { width:100px; height:56px; object-fit:cover; border-radius:6px; background:#000; flex:none; }
+  .muted, small { color:var(--muted); }
+  .type { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--panel2); }
+  .type.intrusion, .type.fall { background:#4c1515; color:#fecaca; } .type.loitering { background:#4a2c07; color:#fde68a; }
+  .type.object { background:#1e2b52; color:#bfd3ff; } .type.manual { background:#2e1a4a; color:#e9d5ff; }
+  .type.anomaly { background:#4c1515; color:#fecaca; }
+  .chip.insp { background:#0e3a44; color:#a5f3fc; } .chip.insp.warn { background:#4a2c07; color:#fde68a; } .chip.insp.reject { background:#7f1d1d; color:#fff; }
+  .insp-box { margin-top:16px; padding:12px 14px; border:1px solid #155e75; border-radius:10px; background:#0b1d24; }
+  .insp-box h3 { margin:0 0 6px; font-size:14px; color:#a5f3fc; }
+  .steps { margin:8px 0 0; padding-left:20px; } .steps li { margin:10px 0; }
+  .steps.off { opacity:.45; pointer-events:none; }
+  .grid3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:4px 14px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px; }
+  .ev-card { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; cursor:pointer; }
+  .ev-card img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:#000; }
+  .ev-card div { padding:8px 10px; }
+  label { display:block; margin:10px 0 4px; color:var(--muted); font-size:13px; }
+  input[type=text], input[type=password], input[type=number], select { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 9px; font-size:14px; }
+  select { width:auto; }
+  .inline { display:flex; gap:6px; align-items:center; margin:6px 0; color:var(--text); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; } @media (max-width:900px) { .two { grid-template-columns:1fr; } }
+  .cam-layout { display:grid; grid-template-columns:200px 1fr; gap:16px; } @media (max-width:800px) { .cam-layout { grid-template-columns:1fr; } }
+  .cam-list button { display:block; width:100%; text-align:left; margin-bottom:6px; }
+  .cam-list button.active { border-color:var(--accent); background:#1e2b52; }
+  .classes { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:0 10px; max-height:240px; overflow:auto; padding:4px; border:1px solid var(--line); border-radius:8px; }
+  .classes label { display:flex; gap:6px; align-items:center; margin:2px 0; color:var(--text); }
+  .canvas-wrap { position:relative; background:#000; border-radius:8px; overflow:hidden; }
+  #editor-canvas { width:100%; display:block; cursor:crosshair; }
+  .shape { display:grid; grid-template-columns:1fr 1.4fr 90px auto; gap:6px; align-items:center; margin-top:6px; }
+  @media (max-width:600px) { .shape { grid-template-columns:1fr 1fr; } }
+  .seg { display:flex; flex-wrap:wrap; gap:4px; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:4px; }
+  .seg button { background:none; border:0; color:var(--muted); padding:7px 12px; border-radius:7px; cursor:pointer; font-size:13px; }
+  .seg button.active { background:var(--accent); color:#fff; }
+  .hint { color:var(--muted); font-size:13px; margin:8px 0 0; }
+  code { background:var(--bg); padding:1px 6px; border-radius:4px; word-break:break-all; }
+  .savebar { position:sticky; bottom:0; background:rgba(11,13,18,.95); padding:12px 0; border-top:1px solid var(--line); display:flex; gap:10px; align-items:center; }
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.9); z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; gap:10px; }
+  #modal-body img, #modal-body video { max-width:100%; max-height:80vh; display:block; }
+  .chart { position:relative; }
+  .chart svg { width:100%; height:220px; display:block; }
+  .chart .bar { fill:var(--accent); } .chart .bar:hover, .chart .bar.hot { fill:#8fb4ff; }
+  .chart text { fill:var(--muted); font-size:11px; }
+  .chart .grid-line { stroke:var(--line); }
+  .tip { position:absolute; pointer-events:none; background:var(--panel2); border:1px solid var(--line); padding:4px 8px; border-radius:6px; font-size:12px; white-space:nowrap; transform:translate(-50%, -110%); }
+  .hbar { display:grid; grid-template-columns:110px 1fr 40px; gap:8px; align-items:center; margin:5px 0; }
+  .hbar span:nth-child(2) { height:10px; border-radius:0 4px 4px 0; background:var(--accent); min-width:2px; }
+  .hbar b { text-align:right; font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; } td.n { text-align:right; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><i></i>AI Camera</div>
+  <nav>
+    <button class="active" data-tab="live">Live</button><button data-tab="events">Events</button>
+    <button data-tab="analytics">Analytics</button><button data-tab="settings">Settings</button>
+  </nav>
+  <span class="spacer"></span>
+  <span id="ai" class="pill">AI …</span><span id="clock"></span>
+</header>
+
+<main>
+  <!-- LIVE -->
+  <section id="live">
+    <div class="kpis">
+      <div class="kpi"><small>Cameras online</small><b id="k-online">–</b></div>
+      <div class="kpi"><small>Objects in view</small><b id="k-now">–</b></div>
+      <div class="kpi"><small>People today</small><b id="k-people">–</b></div>
+      <div class="kpi"><small>Vehicles today</small><b id="k-vehicles">–</b></div>
+      <div class="kpi"><small>Alerts today</small><b id="k-alerts">–</b></div>
+    </div>
+    <div class="live">
+      <div>
+        <div class="row" style="margin-bottom:10px"><span class="muted">Layout</span>
+          <select id="cols"><option value="1">1 × 1</option><option value="2" selected>2 columns</option><option value="3">3 columns</option><option value="4">4 columns</option></select>
+          <button class="btn" id="pause-all">⏸ Pause all AI</button>
+          <span id="totals" class="row"></span></div>
+        <div id="grid" class="grid"></div>
+      </div>
+      <aside class="card"><h2>Latest alerts <a class="btn" href="#" data-goto="events">All events</a></h2><div id="feed" class="feed"></div></aside>
+    </div>
+  </section>
+
+  <!-- EVENTS -->
+  <section id="events" class="hidden">
+    <div class="row" style="margin-bottom:12px">
+      <select id="f-cam"><option value="">All cameras</option></select>
+      <select id="f-type"><option value="">All types</option><option value="object">Object</option><option value="intrusion">Intrusion</option>
+        <option value="loitering">Loitering</option><option value="fall">Fall</option><option value="motion">Motion</option><option value="manual">Manual</option><option value="anomaly">Anomaly (inspection)</option></select>
+      <button class="btn" id="refresh">Refresh</button><span class="spacer"></span>
+      <button class="btn danger" id="clear">Delete all events</button>
+    </div>
+    <div id="ev-grid" class="cards"></div>
+  </section>
+
+  <!-- ANALYTICS -->
+  <section id="analytics" class="hidden">
+    <div class="kpis" id="a-kpis"></div>
+    <div class="card"><h2>Alerts per hour · last 24 hours</h2><div class="chart" id="hour-chart"></div></div>
+    <div class="two">
+      <div class="card"><h2>Objects seen today</h2><div id="a-objects"></div></div>
+      <div>
+        <div class="card"><h2>Line counters today</h2><div id="a-lines"></div></div>
+        <div class="card"><h2>Alert types today</h2><div id="a-kinds"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="settings" class="hidden">
+    <div class="card">
+      <h2>Cameras</h2>
+      <div class="cam-layout">
+        <div class="cam-list"><div id="cam-list"></div><button class="btn" id="add-cam">+ Add camera</button></div>
+        <div id="cam-editor">
+          <div class="two">
+            <div><label>Camera name</label><input type="text" id="c-name" placeholder="e.g. Front gate"></div>
+            <div><label>Location / notes</label><input type="text" id="c-location" placeholder="e.g. Ground floor, facing the road"></div>
+          </div>
+          <label>Connection type</label>
+          <div class="seg" id="c-type">
+            <button data-type="ip">IP camera (RTSP)</button><button data-type="usb">USB / laptop webcam</button>
+            <button data-type="http">HTTP / phone stream</button><button data-type="file">Video file</button><button data-type="url">Custom URL</button>
+          </div>
+          <div class="conn" data-for="ip">
+            <div class="two">
+              <div><label>Brand</label><select id="c-brand" data-k="brand"></select></div>
+              <div><label>IP address</label>
+                <div class="row" style="flex-wrap:nowrap"><input type="text" data-k="ip" placeholder="192.168.1.100"><button class="btn" id="c-scan" type="button">Find cameras</button></div>
+                <div id="scan-out" class="row" style="margin-top:6px"></div></div>
+              <div><label>Username</label><input type="text" data-k="user" autocomplete="off" placeholder="admin"></div>
+              <div><label>Password</label><input type="password" data-k="pass" autocomplete="new-password"></div>
+              <div><label>RTSP port</label><input type="number" data-k="port" min="1" max="65535" placeholder="554"></div>
+              <div><label>Stream</label><select data-k="stream"><option value="main">Main stream (best quality)</option><option value="sub">Sub stream (faster, lower quality)</option></select></div>
+            </div>
+            <div id="c-path-wrap"><label>Stream path</label><input type="text" data-k="path" placeholder="/stream1"></div>
+            <p class="hint" id="c-brand-hint"></p>
+          </div>
+          <div class="conn" data-for="usb"><label>Camera number</label><input type="number" data-k="usb" min="0" max="9" placeholder="0">
+            <small>0 = built-in webcam, 1 = next USB camera, and so on.</small></div>
+          <div class="conn" data-for="http"><label>Stream URL</label><input type="text" data-k="http" placeholder="http://192.168.0.60:8080/video">
+            <small>MJPEG/HTTP stream, e.g. the "IP Webcam" phone app.</small></div>
+          <div class="conn" data-for="file"><label>Video file path (on the AI Camera computer)</label><input type="text" data-k="file" placeholder="/home/pi/videos/test.mp4">
+            <small>Loops forever. Good for testing zones and AI without a camera.</small></div>
+          <div class="conn" data-for="url"><label>Full URL</label><input type="text" data-k="url" placeholder="rtsp://user:pass@host:554/path"></div>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="c-test" type="button">Test connection</button><small id="c-test-out"></small></div>
+          <small>Source: <code id="c-source-preview">–</code></small>
+          <label class="inline"><input type="checkbox" id="c-enabled"> Camera enabled</label>
+          <label>AI features on this camera
+            <button class="btn" type="button" id="egg-preset" title="Turns on everything an egg line needs">🥚 Egg inspection preset</button></label>
+          <div class="row" id="c-features"></div>
+          <small id="preset-out"></small>
+          <label>Zones &amp; lines — draw on the picture</label>
+          <div class="row" style="margin-bottom:8px">
+            <button class="btn" id="draw-zone">Draw zone</button><button class="btn" id="draw-line">Draw line</button>
+            <button class="btn primary hidden" id="draw-done">Finish zone</button><button class="btn hidden" id="draw-cancel">Cancel</button>
+            <small id="draw-hint"></small><span class="spacer"></span><button class="btn danger" id="c-delete">Delete camera</button>
+          </div>
+          <div class="canvas-wrap"><canvas id="editor-canvas" width="1280" height="720"></canvas></div>
+          <div id="shapes"></div>
+          <div class="insp-box">
+            <h3>Quality inspection · anomaly detection</h3>
+            <p class="hint" style="margin-top:0">Learns what a <b>good</b> product looks like, then flags anything that looks different and shows a heatmap of where. No labelling and no bad samples needed.</p>
+            <label class="inline"><input type="checkbox" id="i-enabled"> Turn on inspection for this camera</label>
+            <ol class="steps" id="i-body">
+              <li><b>Inspection area:</b> <button class="btn" id="draw-roi" type="button">Draw inspection area</button>
+                <small>then click two opposite corners on the picture above</small></li>
+              <li><b>What to inspect:</b> <select id="i-target"></select></li>
+              <li><b>Save settings</b>, put only <b>good</b> items in view, then
+                <button class="btn primary" id="i-learn" type="button">Learn good</button> <button class="btn" id="i-reset" type="button">Forget learned</button>
+                <div><small id="i-state"></small></div></li>
+              <li><b>Tune</b> (no retraining needed)
+                <div class="grid3">
+                  <div><label>Warning level: <b id="i-warn-v"></b></label><input type="range" id="i-warn" min="0.8" max="3" step="0.05" style="width:100%"></div>
+                  <div><label>Reject level: <b id="i-reject-v"></b></label><input type="range" id="i-reject" min="0.8" max="4" step="0.05" style="width:100%"></div>
+                  <div><label>Reject when</label><div class="row" style="flex-wrap:nowrap"><input type="number" id="i-votes" min="1" max="30"><small>of last</small><input type="number" id="i-window" min="1" max="30"><small>frames</small></div></div>
+                  <div><label>Good images to learn</label><input type="number" id="i-learn-frames" min="10" max="500"></div>
+                </div>
+                <small>Score 1.00 = the most unusual good item seen while learning. Above the warning level is highlighted orange; above the reject level for enough frames gives a red REJECT and an alert.</small></li>
+            </ol>
+          </div>
+          <div class="insp-box">
+            <h3>Training photos (to train your own detector, e.g. egg)</h3>
+            <p class="hint" style="margin-top:0">Saves clean photos from this camera. Download the .zip, upload it to <b>Roboflow</b>, box every egg (good and bad) as <code>egg</code>,
+              export <b>YOLOv8</b>, train, then set the .pt file in Settings → AI detection → Custom objects → Model.</p>
+            <div class="row">
+              <span>Save</span><input type="number" id="t-count" value="150" min="1" max="2000" style="width:90px">
+              <span>photos, one every</span><input type="number" id="t-every" value="2" min="0.5" max="60" step="0.5" style="width:80px"><span>s</span>
+              <button class="btn primary" type="button" id="t-start">Start collecting</button>
+              <a class="btn" id="t-zip" href="#">Download .zip</a>
+              <button class="btn danger" type="button" id="t-clear">Delete photos</button>
+            </div>
+            <small id="t-state"></small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two">
+      <div class="card">
+        <h2>AI detection</h2>
+        <label>Confidence threshold: <b id="conf-val"></b></label>
+        <input type="range" id="confidence" min="0.05" max="0.95" step="0.05" style="width:100%">
+        <label>Max FPS per camera</label><input type="number" id="max_fps" min="1" max="30">
+        <label>Alert when these objects appear <button class="btn" type="button" id="all">All</button> <button class="btn" type="button" id="none">None</button></label>
+        <div id="classes" class="classes"></div>
+        <label>Alert cooldown (seconds)</label><input type="number" id="alert_cooldown" min="1" max="3600">
+        <div class="insp-box">
+          <h3>Custom objects (e.g. egg) <small id="custom-state"></small></h3>
+          <p class="hint" style="margin-top:0">Objects the standard 80-object model doesn't know. They appear everywhere else: alerts, zones, lines, counts and "Each detected …" inspection.
+            Turn on <b>Custom objects</b> per camera.</p>
+          <label>Object names (comma separated)</label><input type="text" id="custom_classes" placeholder="egg, crate, helmet">
+          <label>Model</label><input type="text" id="custom_model">
+          <small><b>yolov8s-worldv2.pt</b> = no training, finds objects from their names (good to start).
+            For best accuracy, train on <b>Roboflow</b>: upload ~100–300 photos, label them, export as <b>YOLOv8</b>, train, and put the <b>.pt</b> file path here.
+            The object names above must match the trained class names.</small>
+          <label>Confidence for custom objects: <b id="cconf-val"></b></label>
+          <input type="range" id="custom_confidence" min="0.01" max="0.95" step="0.01" style="width:100%">
+        </div>
+        <details style="margin-top:10px"><summary class="muted">Model files (.hef)</summary>
+          <label>Object detection</label><input type="text" id="m-detect">
+          <label>Pose estimation</label><input type="text" id="m-pose">
+          <label>Face detection</label><input type="text" id="m-faces">
+        </details>
+      </div>
+      <div>
+        <div class="card">
+          <h2>Motion &amp; recording</h2>
+          <label class="inline"><input type="checkbox" id="motion_enabled"> Motion events</label>
+          <label>Trigger when this % of the picture changes (lower = more sensitive)</label>
+          <input type="number" id="motion_sensitivity" min="0.1" max="50" step="0.1">
+          <label class="inline"><input type="checkbox" id="record_clips"> Record a video clip for every alert (not motion)</label>
+          <label>Clip length (seconds, includes 3 s before the alert)</label><input type="number" id="clip_seconds" min="3" max="120">
+        </div>
+        <div class="card">
+          <h2>Telegram alerts <button class="btn" id="tg-test">Send test</button></h2>
+          <small>Create a bot with @BotFather, then send it a message and get your chat ID from @userinfobot.</small>
+          <label>Bot token <small id="tg-set"></small></label><input type="password" id="telegram_token" autocomplete="off" placeholder="leave blank to keep">
+          <label>Chat ID</label><input type="text" id="telegram_chat_id">
+          <small id="tg-out"></small>
+        </div>
+        <div class="card">
+          <h2>Login</h2>
+          <label>Username</label><input type="text" id="username">
+          <label>New password (leave blank to keep)</label><input type="password" id="password" autocomplete="new-password">
+        </div>
+      </div>
+    </div>
+    <div class="savebar"><button class="btn primary" id="save">Save settings</button><span id="save-msg" class="muted"></span></div>
+  </section>
+</main>
+
+<div id="modal" class="hidden"><div id="modal-body"></div><div class="row"><span id="modal-cap" class="muted"></span><button class="btn" id="modal-close">Close</button></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+const VEHICLES = ['car', 'motorcycle', 'bus', 'truck', 'bicycle'];
+const FEATURE_NAMES = { smooth_view: 'Smooth live view (boxes may lag on fast movement)', objects: 'Object detection + tracking', custom: 'Custom objects (e.g. egg)', trails: 'Tracking trails', pose: 'Pose + fall detection', faces: 'Face detection', blur_faces: 'Blur faces (privacy)', heatmap: 'Heatmap' };
+let S = null, ST = null, editIdx = 0;
+
+async function api(path, opts = {}) {
+  if (opts.json) opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts.json), signal: opts.signal };
+  const r = await fetch(path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+const fmtTime = t => new Date(t * 1000).toLocaleString();
+const sum = o => Object.values(o || {}).reduce((a, b) => a + b, 0);
+
+// ---------- tabs ----------
+function showTab(name) {
+  $$('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  ['live', 'events', 'analytics', 'settings'].forEach(t => $('#' + t).classList.toggle('hidden', t !== name));
+  if (name === 'events') loadEvents();
+  if (name === 'analytics') loadAnalytics();
+  if (name === 'settings') renderEditor();
+}
+$$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$$('[data-goto]').forEach(a => a.onclick = e => { e.preventDefault(); showTab(a.dataset.goto); });
+setInterval(() => $('#clock').textContent = new Date().toLocaleTimeString(), 1000);
+
+// ---------- modal ----------
+function openEvent(e) {
+  $('#modal-body').innerHTML = e.clip
+    ? `<video src="/events/${encodeURIComponent(e.clip)}" controls autoplay playsinline poster="/events/${encodeURIComponent(e.image)}"></video>`
+    : `<img src="/events/${encodeURIComponent(e.image)}" alt="${esc(e.label)}">`;
+  $('#modal-cap').textContent = `${e.type.toUpperCase()} · ${e.label} · ${e.camera} · ${fmtTime(e.time)}`;
+  $('#modal').classList.remove('hidden');
+}
+// Live view: fetch one picture at a time (~12 fps) instead of an endless stream, so tiles never run out of
+// browser connections and go black. Pauses while the tab is hidden; keeps the last picture on errors.
+function startView(img, id) {
+  img.dataset.live = '1';
+  let prev = null;
+  const loop = async () => {
+    if (!img.isConnected) return prev && URL.revokeObjectURL(prev);
+    if (img.dataset.live !== '1' || document.hidden) return setTimeout(loop, 400);
+    try {
+      const r = await fetch(`/frame/${id}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      const url = URL.createObjectURL(await r.blob());
+      await new Promise(ok => { img.onload = img.onerror = ok; img.src = url; });
+      if (prev) URL.revokeObjectURL(prev);
+      prev = url;
+      setTimeout(loop, 80);
+    } catch (e) { setTimeout(loop, 1000); }
+  };
+  loop();
+}
+
+function openLive(id, name) {
+  $('#modal-body').innerHTML = `<img alt="${esc(name)} live">`;
+  startView($('#modal-body img'), id);
+  $('#modal-cap').textContent = name;
+  $('#modal').classList.remove('hidden');
+}
+$('#modal-close').onclick = () => { $('#modal').classList.add('hidden'); $('#modal-body').innerHTML = ''; };
+
+// ---------- live ----------
+$('#cols').onchange = e => { $('#grid').style.setProperty('--cols', e.target.value); try { localStorage.cols = e.target.value; } catch (_) {} };
+try { if (localStorage.cols) { $('#cols').value = localStorage.cols; $('#grid').style.setProperty('--cols', localStorage.cols); } } catch (_) {}
+
+function renderGrid() {
+  const cams = S.cameras.filter(c => c.enabled);
+  $('#grid').innerHTML = cams.length ? cams.map(c => `
+    <div class="tile" id="t-${c.id}">
+      <div class="tile-head"><span class="dot"></span><b>${esc(c.name)} ${c.location ? `<small>· ${esc(c.location)}</small>` : ''}</b><span class="badges row"></span><small class="fps"></small></div>
+      <div class="view"><img alt="${esc(c.name)} live view"><span class="rec hidden">● REC</span></div>
+      <div class="tile-foot counts"></div>
+      <div class="tile-foot" style="padding-top:0">
+        <button class="btn" data-full>Full screen</button><a class="btn" href="/snapshot/${c.id}">Snapshot</a>
+        <button class="btn" data-rec>Record clip</button>
+        <button class="btn" data-pause title="Stop AI detection and alerts on this camera; video keeps playing">⏸ Pause AI</button>
+        <button class="btn" data-freeze title="Hold the current picture on screen">❚❚ Freeze view</button></div>
+    </div>`).join('') : '<div class="card muted">No cameras enabled. Add one in Settings.</div>';
+  cams.forEach(c => {
+    const t = $('#t-' + c.id);
+    startView(t.querySelector('.view img'), c.id);
+    t.querySelector('[data-full]').onclick = () => openLive(c.id, c.name);
+    t.querySelector('[data-pause]').onclick = async () => {
+      const live = ST && ST.cameras.find(x => x.id === c.id);
+      await api('/api/pause/' + c.id, { json: { paused: !(live && live.paused) } }); pollStatus();
+    };
+    t.querySelector('[data-freeze]').onclick = e => {
+      const img = t.querySelector('.view img'), frozen = e.target.classList.toggle('on');
+      img.dataset.live = frozen ? '0' : '1';
+      e.target.textContent = frozen ? '▶ Live view' : '❚❚ Freeze view';
+    };
+    t.querySelector('[data-rec]').onclick = async e => {
+      try { await api('/api/record/' + c.id, { method: 'POST' }); e.target.textContent = 'Recording…'; }
+      catch (err) { alert(err.message); }
+      setTimeout(() => e.target.textContent = 'Record clip', 3000);
+    };
+  });
+  $('#f-cam').innerHTML = '<option value="">All cameras</option>' + S.cameras.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+function setHTML(el, html) { if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; } }
+
+const chips = counts => Object.entries(counts).sort((a, b) => b[1] - a[1])
+  .map(([k, v]) => `<span class="chip ${S.alert_classes.includes(k) ? 'alert' : ''}">${esc(k)} ${v}</span>`).join('');
+
+async function pollStatus() {
+  try { ST = await api('/api/status'); } catch (e) { $('#ai').className = 'pill bad'; $('#ai').textContent = 'Server unreachable'; return; }
+  $('#ai').className = 'pill ' + (ST.ai_ok ? 'ok' : 'bad');
+  $('#ai').textContent = ST.ai_ok ? `AI · ${ST.ai_backend} running` : 'AI off';
+  $('#ai').title = ST.ai_error;
+  const total = {};
+  ST.cameras.forEach(c => {
+    const t = $('#t-' + c.id);
+    for (const [k, v] of Object.entries(c.counts)) total[k] = (total[k] || 0) + v;
+    if (!t) return;
+    t.querySelector('.dot').classList.toggle('on', c.online);
+    t.querySelector('.fps').textContent = c.online ? c.fps + ' fps' : 'offline';
+    t.querySelector('.rec').classList.toggle('hidden', !c.recording);
+    const ins = c.inspection;
+    const pb = t.querySelector('[data-pause]');
+    pb.textContent = c.paused ? '▶ Resume AI' : '⏸ Pause AI'; pb.classList.toggle('on', c.paused);
+    setHTML(t.querySelector('.badges'), (c.paused ? '<span class="chip paused">AI PAUSED</span>' : '') +
+      (c.motion ? '<span class="chip motion">MOTION</span>' : '') +
+      (ins.enabled ? `<span class="chip insp ${ins.severity || ''}">Inspect: ${ins.score != null ? ins.severity.toUpperCase() + ' ' + ins.score.toFixed(2) : esc(ins.state)}</span>` : '') +
+      Object.entries(c.features).filter(([k, v]) => v && !['trails', 'objects', 'smooth_view'].includes(k)).map(([k]) => `<span class="chip ai">${FEATURE_NAMES[k].split(' ')[0]}${k === 'blur_faces' ? ' faces' : ''}</span>`).join(''));
+    setHTML(t.querySelector('.counts'), (chips(c.counts) || '<small>No objects</small>') +
+      Object.entries(c.zones).map(([z, n]) => `<span class="chip zone">${esc(z)}: ${n}</span>`).join(''));
+  });
+  if (!$('#settings').classList.contains('hidden')) updateInspectionState();
+  const st = ST.stats;
+  $('#k-online').textContent = `${ST.cameras.filter(c => c.online).length} / ${ST.cameras.length}`;
+  $('#k-now').textContent = sum(total);
+  $('#k-people').textContent = st.unique.person || 0;
+  $('#k-vehicles').textContent = VEHICLES.reduce((a, k) => a + (st.unique[k] || 0), 0);
+  $('#k-alerts').textContent = Object.entries(st.kinds).filter(([k]) => k !== 'motion').reduce((a, [, v]) => a + v, 0);
+  setHTML($('#totals'), chips(total));
+  const allPaused = ST.cameras.length && ST.cameras.every(c => c.paused);
+  $('#pause-all').textContent = allPaused ? '▶ Resume all AI' : '⏸ Pause all AI';
+  $('#pause-all').classList.toggle('on', !!allPaused);
+}
+$('#pause-all').onclick = async () => {
+  const pause = !ST.cameras.every(c => c.paused);
+  await Promise.all(ST.cameras.map(c => api('/api/pause/' + c.id, { json: { paused: pause } })));
+  pollStatus();
+};
+
+async function pollFeed() {
+  try {
+    const ev = (await api('/api/events?limit=40')).filter(e => e.type !== 'motion').slice(0, 15);
+    setHTML($('#feed'), ev.length ? ev.map((e, i) => `
+      <div class="ev-row" data-i="${i}"><img loading="lazy" src="/events/${encodeURIComponent(e.image)}" alt="">
+        <div><span class="type ${e.type}">${e.type}</span> ${e.clip ? '▶' : ''}<div>${esc(e.label)}</div><small>${esc(e.camera)} · ${new Date(e.time * 1000).toLocaleTimeString()}</small></div></div>`).join('')
+      : '<small>No alerts yet</small>');
+    $$('#feed .ev-row').forEach(r => r.onclick = () => openEvent(ev[r.dataset.i]));
+  } catch (e) {}
+}
+
+// ---------- events ----------
+async function loadEvents() {
+  const q = new URLSearchParams({ limit: 200, camera: $('#f-cam').value, type: $('#f-type').value });
+  const ev = await api('/api/events?' + q);
+  $('#ev-grid').innerHTML = ev.length ? ev.map((e, i) => `
+    <div class="ev-card" data-i="${i}"><img loading="lazy" src="/events/${encodeURIComponent(e.image)}" alt="${esc(e.label)}">
+      <div><span class="type ${e.type}">${e.type}</span> ${e.clip ? '<span class="chip">▶ clip</span>' : ''}
+        <div><b>${esc(e.label)}</b></div><small>${esc(e.camera)} · ${fmtTime(e.time)}</small></div></div>`).join('')
+    : '<small>No events match.</small>';
+  $$('#ev-grid .ev-card').forEach(c => c.onclick = () => openEvent(ev[c.dataset.i]));
+}
+$('#f-cam').onchange = $('#f-type').onchange = $('#refresh').onclick = loadEvents;
+$('#clear').onclick = async () => {
+  if (!confirm('Delete ALL events, snapshots and clips?')) return;
+  await api('/api/events', { method: 'DELETE' }); loadEvents(); pollFeed();
+};
+
+// ---------- analytics ----------
+function hbars(obj) {
+  const rows = Object.entries(obj).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  return rows.length ? rows.map(([k, v]) => `<div class="hbar"><span>${esc(k)}</span><span style="width:${v / max * 100}%"></span><b>${v}</b></div>`).join('') : '<small>Nothing yet today</small>';
+}
+async function loadAnalytics() {
+  const [{ hours }] = await Promise.all([api('/api/analytics'), pollStatus()]);
+  const st = ST.stats;
+  const k = (label, v) => `<div class="kpi"><small>${label}</small><b>${v}</b></div>`;
+  $('#a-kpis').innerHTML = k('People today', st.unique.person || 0) + k('Vehicles today', VEHICLES.reduce((a, x) => a + (st.unique[x] || 0), 0)) +
+    k('Intrusions', st.kinds.intrusion || 0) + k('Loitering', st.kinds.loitering || 0) + k('Falls', st.kinds.fall || 0) + k('Inspection rejects', st.kinds.anomaly || 0) + k('Motion events', st.kinds.motion || 0);
+  $('#a-objects').innerHTML = hbars(st.unique);
+  const kinds = { ...st.kinds }; delete kinds.motion;
+  $('#a-kinds').innerHTML = hbars(kinds);
+  const names = Object.fromEntries(S.cameras.map(c => [c.id, c.name]));
+  const lines = Object.entries(st.lines);
+  $('#a-lines').innerHTML = lines.length ? `<table><tr><th>Camera</th><th>Line</th><th class="n">In</th><th class="n">Out</th></tr>${lines.map(([key, v]) => {
+    const [cid, ln] = key.split('|'); return `<tr><td>${esc(names[cid] || cid)}</td><td>${esc(ln)}</td><td class="n">${v.in}</td><td class="n">${v.out}</td></tr>`;
+  }).join('')}</table>` : '<small>Draw a line on a camera in Settings to count people/vehicles crossing it.</small>';
+
+  // single-series bar chart: one hue, recessive grid, hover tooltip
+  const W = 960, H = 220, P = { l: 32, r: 8, t: 10, b: 24 }, max = Math.max(1, ...hours.map(h => h.count));
+  const bw = (W - P.l - P.r) / 24, y = v => H - P.b - v / max * (H - P.t - P.b);
+  const ticks = [0, Math.ceil(max / 2), max];
+  $('#hour-chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Alerts per hour">
+    ${ticks.map(t => `<line class="grid-line" x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${P.l - 6}" y="${y(t) + 4}" text-anchor="end">${t}</text>`).join('')}
+    ${hours.map((h, i) => { const top = y(h.count), x = P.l + i * bw + 1;
+      return `<rect class="bar" data-i="${i}" x="${x}" y="${top}" width="${bw - 2}" height="${Math.max(0, H - P.b - top)}" rx="3"/>` +
+        `<rect data-i="${i}" x="${x}" y="${P.t}" width="${bw - 2}" height="${H - P.t - P.b}" fill="transparent"/>` +
+        (i % 3 === 0 ? `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${new Date(h.time * 1000).getHours()}:00</text>` : ''); }).join('')}
+  </svg><div class="tip hidden"></div>`;
+  const tip = $('#hour-chart .tip'), svg = $('#hour-chart svg');
+  $$('#hour-chart rect[data-i]').forEach(r => {
+    r.onmouseenter = () => {
+      const h = hours[r.dataset.i], bar = svg.querySelector(`.bar[data-i="${r.dataset.i}"]`), box = svg.getBoundingClientRect();
+      bar.classList.add('hot');
+      tip.textContent = `${new Date(h.time * 1000).getHours()}:00 – ${h.count} alert${h.count === 1 ? '' : 's'}`;
+      tip.style.left = ((+bar.getAttribute('x') + bw / 2) / W * box.width) + 'px';
+      tip.style.top = (+bar.getAttribute('y') / H * box.height) + 'px';
+      tip.classList.remove('hidden');
+    };
+    r.onmouseleave = () => { tip.classList.add('hidden'); $$('#hour-chart .bar.hot').forEach(b => b.classList.remove('hot')); };
+  });
+}
+
+// ---------- settings: cameras ----------
+let drawMode = null, draft = [];
+const canvas = $('#editor-canvas'), ctx = canvas.getContext('2d'), bgImg = new Image();
+bgImg.onload = bgImg.onerror = () => drawCanvas();
+
+function cam() { return S.cameras[editIdx]; }
+
+function renderCamList() {
+  $('#cam-list').innerHTML = S.cameras.map((c, i) =>
+    `<button class="btn ${i === editIdx ? 'active' : ''}" data-i="${i}">${c.enabled ? '🟢' : '⚪'} ${esc(c.name || 'New camera')}</button>`).join('');
+  $$('#cam-list button').forEach(b => b.onclick = () => { editIdx = +b.dataset.i; renderEditor(); });
+}
+
+function renderEditor() {
+  renderCamList();
+  $('#cam-editor').classList.toggle('hidden', !cam());
+  if (!cam()) return;
+  const c = cam();
+  c.conn = c.conn && c.conn.type ? c.conn : guessConn(c.source);
+  $('#c-name').value = c.name; $('#c-location').value = c.location || ''; $('#c-enabled').checked = c.enabled;
+  $$('.conn [data-k]').forEach(i => i.value = c.conn[i.dataset.k] ?? '');
+  $('#c-test-out').textContent = ''; $('#scan-out').innerHTML = '';
+  renderConn();
+  $('#c-features').innerHTML = Object.entries(FEATURE_NAMES).map(([k, n]) =>
+    `<label class="inline"><input type="checkbox" data-f="${k}" ${c.features[k] ? 'checked' : ''}> ${n}</label>`).join('');
+  $$('#c-features input').forEach(i => i.onchange = () => c.features[i.dataset.f] = i.checked);
+  setDraw(null);
+  bgImg.src = c.id ? `/snapshot/${c.id}?raw=1&t=${Date.now()}` : '';
+  if (!c.id) drawCanvas();
+  renderShapes();
+  renderInspection();
+  $('#preset-out').textContent = '';
+  updateCollect();
+}
+$('#c-name').oninput = e => { cam().name = e.target.value; renderCamList(); };
+$('#c-location').oninput = e => cam().location = e.target.value;
+$('#c-enabled').onchange = e => { cam().enabled = e.target.checked; renderCamList(); };
+$('#add-cam').onclick = () => {
+  S.cameras.push({ id: '', name: `Camera ${S.cameras.length + 1}`, location: '', source: '', enabled: true,
+    conn: { type: 'ip', brand: 'tapo', port: 554, stream: 'main' },
+    features: { smooth_view: true, objects: true, custom: false, pose: false, faces: false, blur_faces: false, heatmap: false, trails: true }, zones: [], lines: [] });
+  editIdx = S.cameras.length - 1; renderEditor(); $('#c-name').select();
+};
+
+// ---------- settings: camera connection ----------
+const BRANDS = {
+  tapo: { name: 'TP-Link Tapo / VIGI', main: '/stream1', sub: '/stream2',
+    hint: 'Tapo app → camera → Settings → Advanced Settings → Camera Account. Use that username/password, not your Tapo login.' },
+  hikvision: { name: 'Hikvision / HiLook', main: '/Streaming/Channels/101', sub: '/Streaming/Channels/102',
+    hint: 'Use the camera admin account. Through an NVR, channel N is N01 (main) / N02 (sub).' },
+  dahua: { name: 'Dahua / Imou / Amcrest', main: '/cam/realmonitor?channel=1&subtype=0', sub: '/cam/realmonitor?channel=1&subtype=1',
+    hint: 'Use the device admin account. Imou: username admin, password = safety code on the label.' },
+  reolink: { name: 'Reolink', main: '/h264Preview_01_main', sub: '/h264Preview_01_sub',
+    hint: 'Turn on RTSP first: Reolink app → Settings → Network → Advanced → Server settings.' },
+  ezviz: { name: 'EZVIZ', main: '/h264/ch1/main/av_stream', sub: '/h264/ch1/sub/av_stream',
+    hint: 'Username admin, password = verification code on the label. Turn on "LAN Live View" / RTSP in the EZVIZ app.' },
+  uniview: { name: 'Uniview', main: '/media/video1', sub: '/media/video2', hint: 'Use the camera admin account.' },
+  axis: { name: 'Axis', main: '/axis-media/media.amp', sub: '/axis-media/media.amp?resolution=640x360', hint: 'Use a camera user with viewer rights.' },
+  generic: { name: 'Other / ONVIF (enter path)', main: '', sub: '',
+    hint: 'Find the RTSP path in the camera manual, or with ONVIF Device Manager.' },
+};
+$('#c-brand').innerHTML = Object.entries(BRANDS).map(([k, b]) => `<option value="${k}">${esc(b.name)}</option>`).join('');
+
+function guessConn(src = '') {
+  if (/^\d+$/.test(src)) return { type: 'usb', usb: src };
+  if (/^https?:/i.test(src)) return { type: 'http', http: src };
+  if (/^rtsp:/i.test(src)) return { type: 'url', url: src };
+  return src ? { type: 'file', file: src } : { type: 'ip', brand: 'tapo', port: 554, stream: 'main' };
+}
+
+function buildSource(k) {
+  if (k.type === 'usb') return String(k.usb || 0);
+  if (k.type !== 'ip') return (k[k.type] || '').trim();
+  if (!k.ip) return '';
+  const b = BRANDS[k.brand] || BRANDS.generic;
+  let path = k.brand === 'generic' ? (k.path || '') : b[k.stream === 'sub' ? 'sub' : 'main'];
+  if (path && !path.startsWith('/')) path = '/' + path;
+  const auth = k.user ? `${encodeURIComponent(k.user)}:${encodeURIComponent(k.pass || '')}@` : '';
+  return `rtsp://${auth}${k.ip.trim()}:${k.port || 554}${path}`;
+}
+
+function renderConn() {
+  const k = cam().conn, b = BRANDS[k.brand] || BRANDS.generic;
+  $$('#c-type button').forEach(x => x.classList.toggle('active', x.dataset.type === k.type));
+  $$('.conn').forEach(x => x.classList.toggle('hidden', x.dataset.for !== k.type));
+  $('#c-path-wrap').classList.toggle('hidden', k.brand !== 'generic');
+  $('#c-brand-hint').textContent = b.hint;
+  cam().source = buildSource(k);
+  $('#c-source-preview').textContent = cam().source.replace(/:[^:@/]*@/, ':••••@') || '–';
+}
+$$('#c-type button').forEach(x => x.onclick = () => { cam().conn.type = x.dataset.type; renderConn(); });
+$$('.conn [data-k]').forEach(i => i.oninput = i.onchange = () => { cam().conn[i.dataset.k] = i.value; renderConn(); });
+
+$('#c-scan').onclick = async () => {
+  $('#scan-out').innerHTML = '<small>Scanning your network for cameras…</small>';
+  try {
+    const r = await api('/api/scan', { method: 'POST' });
+    $('#scan-out').innerHTML = r.devices.length
+      ? '<small>Found (click to use):</small>' + r.devices.map(ip => `<button class="btn" type="button" data-ip="${esc(ip)}">${esc(ip)}</button>`).join('')
+      : `<small>No RTSP cameras found on ${esc(r.network)}. Check the camera is powered and on the same network.</small>`;
+    $$('#scan-out [data-ip]').forEach(x => x.onclick = () => {
+      cam().conn.ip = x.dataset.ip; $('[data-k="ip"]').value = x.dataset.ip; renderConn();
+    });
+  } catch (e) { $('#scan-out').innerHTML = `<small>✖ ${esc(e.message)}</small>`; }
+};
+$('#c-delete').onclick = () => {
+  if (!confirm(`Remove camera "${cam().name}"? (Takes effect when you save.)`)) return;
+  S.cameras.splice(editIdx, 1); editIdx = 0; renderEditor();
+};
+$('#c-test').onclick = async () => {
+  if (!cam().source) return $('#c-test-out').textContent = '✖ Fill in the connection details first (e.g. the IP address).';
+  $('#c-test-out').textContent = 'Connecting… (can take up to 25 s)';
+  $('#c-test').disabled = true;
+  try {
+    const r = await api('/api/test', { json: { source: cam().source }, signal: AbortSignal.timeout(35000) });
+    $('#c-test-out').textContent = r.ok ? `✔ Connected · ${r.width}×${r.height} — click Save settings to start it`
+      : '✖ ' + r.error + (cam().conn.type === 'ip' ? ' — check IP, username/password, and that RTSP is turned on in the camera' : '');
+  } catch (e) {
+    $('#c-test-out').textContent = '✖ ' + (e.name === 'TimeoutError' ? 'No answer from the AI Camera server — is it still running?' : e.message);
+  } finally { $('#c-test').disabled = false; }
+};
+
+function setDraw(mode) {
+  drawMode = mode; draft = [];
+  $('#draw-done').classList.toggle('hidden', mode !== 'zone');
+  $('#draw-cancel').classList.toggle('hidden', !mode);
+  $('#draw-hint').textContent = mode === 'zone' ? 'Click corners of the area, then Finish zone' : mode === 'line' ? 'Click the start and end of the line'
+    : mode === 'roi' ? 'Click two opposite corners of the inspection area' : '';
+  drawCanvas();
+}
+$('#draw-roi').onclick = () => { setDraw('roi'); canvas.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+$('#draw-zone').onclick = () => setDraw('zone');
+$('#draw-line').onclick = () => setDraw('line');
+$('#draw-cancel').onclick = () => setDraw(null);
+$('#draw-done').onclick = () => {
+  if (draft.length < 3) return alert('A zone needs at least 3 points');
+  cam().zones.push({ name: `Zone ${cam().zones.length + 1}`, points: draft, classes: ['person'], dwell: 0 });
+  setDraw(null); renderShapes();
+};
+canvas.onclick = e => {
+  if (!drawMode) return;
+  const r = canvas.getBoundingClientRect();
+  draft.push([+((e.clientX - r.left) / r.width).toFixed(4), +((e.clientY - r.top) / r.height).toFixed(4)]);
+  if (drawMode === 'line' && draft.length === 2) {
+    cam().lines.push({ name: `Line ${cam().lines.length + 1}`, points: draft, classes: ['person', 'car'] });
+    setDraw(null); renderShapes();
+  } else if (drawMode === 'roi' && draft.length === 2) {
+    cam().inspection.roi = draft;
+    setDraw(null); renderInspection();
+  } else drawCanvas();
+};
+
+function drawCanvas() {
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  if (bgImg.complete && bgImg.naturalWidth) ctx.drawImage(bgImg, 0, 0, W, H);
+  else { ctx.fillStyle = '#8a93a6'; ctx.font = '28px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Save and enable the camera to see its picture here', W / 2, H / 2); }
+  if (!cam()) return;
+  const path = (pts, close) => { ctx.beginPath(); pts.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](x * W, y * H)); if (close) ctx.closePath(); };
+  ctx.lineWidth = 4; ctx.font = 'bold 24px system-ui'; ctx.textAlign = 'left';
+  cam().zones.forEach(z => { path(z.points, true); ctx.fillStyle = 'rgba(255,160,0,.18)'; ctx.fill(); ctx.strokeStyle = '#ffa000'; ctx.stroke();
+    ctx.fillStyle = '#ffa000'; ctx.fillText(z.name, z.points[0][0] * W + 6, z.points[0][1] * H - 8); });
+  cam().lines.forEach(l => { path(l.points); ctx.strokeStyle = '#e040fb'; ctx.stroke(); ctx.fillStyle = '#e040fb'; ctx.fillText(l.name, l.points[0][0] * W + 6, l.points[0][1] * H - 8); });
+  const ins = cam().inspection;
+  if (ins && ins.enabled) {
+    const [[ax, ay], [bx, by]] = ins.roi;
+    ctx.setLineDash([12, 8]); ctx.strokeStyle = '#22d3ee';
+    ctx.strokeRect(Math.min(ax, bx) * W, Math.min(ay, by) * H, Math.abs(bx - ax) * W, Math.abs(by - ay) * H);
+    ctx.setLineDash([]); ctx.fillStyle = '#22d3ee'; ctx.fillText('Inspection area', Math.min(ax, bx) * W + 6, Math.min(ay, by) * H - 8);
+  }
+  if (draft.length) { path(draft); ctx.strokeStyle = '#4f8cff'; ctx.stroke();
+    draft.forEach(([x, y]) => { ctx.fillStyle = '#4f8cff'; ctx.beginPath(); ctx.arc(x * W, y * H, 7, 0, 7); ctx.fill(); }); }
+}
+
+function renderShapes() {
+  const c = cam();
+  const row = (kind, s, i) => `<div class="shape" data-k="${kind}" data-i="${i}">
+      <input type="text" data-p="name" value="${esc(s.name)}" aria-label="${kind} name">
+      <input type="text" data-p="classes" value="${esc(s.classes.join(', '))}" placeholder="all objects" aria-label="objects (comma separated)">
+      ${kind === 'zones' ? `<input type="number" data-p="dwell" value="${s.dwell}" min="0" title="Loitering alert after N seconds (0 = off)" aria-label="loitering seconds">` : '<small>counts in/out</small>'}
+      <button class="btn danger" data-del>Delete</button></div>`;
+  $('#shapes').innerHTML = (c.zones.length || c.lines.length)
+    ? '<small>Name · objects it applies to (comma separated, blank = all) · zone loitering seconds (0 = off)</small>' +
+      c.zones.map((z, i) => row('zones', z, i)).join('') + c.lines.map((l, i) => row('lines', l, i)).join('')
+    : '<small>No zones or lines. Zones alert on intrusion and loitering; lines count objects crossing in/out.</small>';
+  $$('#shapes .shape').forEach(r => {
+    const s = c[r.dataset.k][r.dataset.i];
+    $$('input', r).forEach(inp => inp.oninput = () => {
+      const p = inp.dataset.p;
+      s[p] = p === 'classes' ? inp.value.split(',').map(x => x.trim()).filter(x => S.classes.includes(x)) : p === 'dwell' ? +inp.value : inp.value;
+      drawCanvas();
+    });
+    r.querySelector('[data-del]').onclick = () => { c[r.dataset.k].splice(r.dataset.i, 1); renderShapes(); drawCanvas(); };
+  });
+}
+
+// ---------- settings: quality inspection ----------
+const INSPECTION_DEFAULT = { enabled: false, roi: [[0.2, 0.2], [0.8, 0.8]], target: 'area', warn: 1.15, reject: 1.4, votes: 2, window: 4, learn_frames: 40 };
+
+function renderInspection() {
+  const i = cam().inspection = { ...INSPECTION_DEFAULT, ...cam().inspection };
+  $('#i-enabled').checked = i.enabled;
+  $('#i-body').classList.toggle('off', !i.enabled);
+  $('#i-target').innerHTML = '<option value="area">Whole inspection area (finds any defect inside it)</option>' +
+    S.classes.map(c => `<option value="${esc(c)}">Each detected ${esc(c)} (scored one by one)</option>`).join('');
+  $('#i-target').value = i.target;
+  for (const k of ['warn', 'reject', 'votes', 'window']) $('#i-' + k).value = i[k];
+  $('#i-learn-frames').value = i.learn_frames;
+  $('#i-warn-v').textContent = (+i.warn).toFixed(2); $('#i-reject-v').textContent = (+i.reject).toFixed(2);
+  updateInspectionState();
+  drawCanvas();
+}
+
+function updateInspectionState() {
+  const c = cam(), live = c && ST && ST.cameras.find(x => x.id === c.id);
+  if (!c || !$('#i-state')) return;
+  if (!live) return $('#i-state').textContent = 'Save settings (with the camera enabled) before learning.';
+  const ins = live.inspection, t = ins.trained;
+  const learned = t ? `Learned from ${t.images} good images (${fmtTime(t.time)}).` : 'Nothing learned yet.';
+  const now = ins.score != null ? ` Live: ${ins.severity.toUpperCase()} · score ${ins.score.toFixed(2)}` : '';
+  $('#i-state').textContent = `Status: ${ins.state}. ${learned}${now}`;
+}
+
+$('#i-enabled').onchange = e => { cam().inspection.enabled = e.target.checked; renderInspection(); };
+$('#i-target').onchange = e => cam().inspection.target = e.target.value;
+for (const k of ['warn', 'reject', 'votes', 'window']) $('#i-' + k).oninput = e => {
+  cam().inspection[k] = +e.target.value;
+  $('#i-warn-v').textContent = (+cam().inspection.warn).toFixed(2); $('#i-reject-v').textContent = (+cam().inspection.reject).toFixed(2);
+};
+$('#i-learn-frames').oninput = e => cam().inspection.learn_frames = +e.target.value;
+$('#i-learn').onclick = async () => {
+  if (!cam().id) return alert('Save settings first so the camera starts.');
+  try { await api('/api/inspect/' + cam().id, { method: 'POST' }); $('#i-state').textContent = 'Learning started — keep only good items in view…'; }
+  catch (e) { alert(e.message); }
+};
+$('#i-reset').onclick = async () => {
+  if (!cam().id || !confirm('Forget what this camera learned as "good"?')) return;
+  await api('/api/inspect/' + cam().id, { method: 'DELETE' }); updateInspectionState();
+};
+
+// ---------- settings: egg preset & training photos ----------
+$('#egg-preset').onclick = () => {
+  const c = cam();
+  Object.assign(c.features, { smooth_view: false, objects: false, custom: true, trails: false, pose: false, faces: false, blur_faces: false, heatmap: false });
+  const names = $('#custom_classes').value.split(',').map(x => x.trim()).filter(Boolean);
+  if (!names.includes('egg')) $('#custom_classes').value = [...names, 'egg'].join(', ');
+  if (!S.classes.includes('egg')) S.classes.push('egg');
+  c.inspection = { ...INSPECTION_DEFAULT, ...c.inspection, enabled: true, target: 'egg', votes: 2, window: 3 };
+  renderEditor();
+  $('#preset-out').textContent = '✔ Egg preset applied: custom "egg" detection, each egg inspected, frame votes 2 of 3. ' +
+    'Next: adjust the inspection area, click Save settings, then Learn good with only good eggs in view.';
+};
+
+let collectTimer = null;
+async function updateCollect() {
+  const c = cam();
+  if (!c || !c.id) { $('#t-state').textContent = 'Save settings first so the camera starts.'; return; }
+  try {
+    const r = await api('/api/collect/' + c.id);
+    $('#t-state').textContent = r.progress ? `Collecting… ${r.progress[0]} / ${r.progress[1]} (keep eggs moving through the view, include bad ones)`
+      : `${r.saved} photos saved.`;
+    $('#t-zip').href = `/training/${c.id}.zip`;
+    $('#t-zip').classList.toggle('hidden', !r.saved);
+    if (!r.progress && collectTimer) { clearInterval(collectTimer); collectTimer = null; }
+  } catch (e) { $('#t-state').textContent = 'Camera not running — enable it and save settings.'; }
+}
+$('#t-start').onclick = async () => {
+  try {
+    await api('/api/collect/' + cam().id, { json: { count: +$('#t-count').value, every: +$('#t-every').value } });
+    if (!collectTimer) collectTimer = setInterval(updateCollect, 1500);
+    updateCollect();
+  } catch (e) { alert(e.message); }
+};
+$('#t-clear').onclick = async () => {
+  if (!confirm('Delete all training photos from this camera?')) return;
+  await api('/api/collect/' + cam().id, { method: 'DELETE' }); updateCollect();
+};
+
+// ---------- settings: global ----------
+function renderGlobal() {
+  for (const k of ['confidence', 'max_fps', 'alert_cooldown', 'motion_sensitivity', 'clip_seconds', 'telegram_chat_id', 'username']) $('#' + k).value = S[k];
+  for (const k of ['motion_enabled', 'record_clips']) $('#' + k).checked = S[k];
+  for (const k of ['detect', 'pose', 'faces']) $('#m-' + k).value = S.models[k];
+  $('#conf-val').textContent = Math.round(S.confidence * 100) + '%';
+  $('#password').value = $('#telegram_token').value = '';
+  $('#tg-set').textContent = S.telegram_set ? '(saved)' : '(not set)';
+  $('#classes').innerHTML = S.classes.map(c =>
+    `<label><input type="checkbox" value="${esc(c)}" ${S.alert_classes.includes(c) ? 'checked' : ''}> ${esc(c)}</label>`).join('');
+  $('#custom_classes').value = S.custom_classes.join(', ');
+  $('#custom_model').value = S.custom_model;
+  $('#custom_confidence').value = S.custom_confidence;
+  $('#cconf-val').textContent = Math.round(S.custom_confidence * 100) + '%';
+  $('#custom-state').textContent = S.custom_ok ? '· model loaded' : S.custom_failed ? '· model failed to load (check the path)' : '· loads when a camera turns on Custom objects';
+}
+$('#custom_confidence').oninput = e => $('#cconf-val').textContent = Math.round(e.target.value * 100) + '%';
+$('#confidence').oninput = e => $('#conf-val').textContent = Math.round(e.target.value * 100) + '%';
+$('#all').onclick = () => $$('#classes input').forEach(i => i.checked = true);
+$('#none').onclick = () => $$('#classes input').forEach(i => i.checked = false);
+$('#tg-test').onclick = async () => {
+  $('#tg-out').textContent = 'Sending… (save first if you just entered the token)';
+  try { const r = await api('/api/test_telegram', { method: 'POST' }); $('#tg-out').textContent = r.ok ? '✔ Sent — check Telegram' : '✖ ' + r.error; }
+  catch (e) { $('#tg-out').textContent = '✖ ' + e.message; }
+};
+
+$('#save').onclick = async () => {
+  if (drawMode) setDraw(null);
+  const body = {
+    cameras: S.cameras, models: { detect: $('#m-detect').value, pose: $('#m-pose').value, faces: $('#m-faces').value },
+    confidence: +$('#confidence').value, max_fps: +$('#max_fps').value, alert_cooldown: +$('#alert_cooldown').value,
+    alert_classes: $$('#classes input:checked').map(i => i.value),
+    custom_classes: $('#custom_classes').value.split(',').map(x => x.trim()).filter(Boolean),
+    custom_model: $('#custom_model').value, custom_confidence: +$('#custom_confidence').value,
+    motion_enabled: $('#motion_enabled').checked, motion_sensitivity: +$('#motion_sensitivity').value,
+    record_clips: $('#record_clips').checked, clip_seconds: +$('#clip_seconds').value,
+    telegram_token: $('#telegram_token').value, telegram_chat_id: $('#telegram_chat_id').value,
+    username: $('#username').value, password: $('#password').value,
+  };
+  $('#save-msg').textContent = 'Saving…';
+  try {
+    S = await api('/api/settings', { json: body });
+    editIdx = Math.min(editIdx, Math.max(0, S.cameras.length - 1));
+    renderGrid(); renderGlobal(); renderEditor();
+    $('#save-msg').textContent = '✔ Saved and applied.' + (body.password ? ' Log in again with the new password.' : '');
+  } catch (e) { $('#save-msg').textContent = '✖ ' + e.message; }
+};
+
+(async () => {
+  S = await api('/api/settings');
+  renderGrid(); renderGlobal();
+  const tab = location.hash.slice(1);  // e.g. /#settings opens that tab directly
+  if (['events', 'analytics', 'settings'].includes(tab)) showTab(tab);
+  pollStatus(); pollFeed();
+  setInterval(pollStatus, 1000);
+  setInterval(pollFeed, 3000);
+})();
+</script>
+</body>
+</html>
