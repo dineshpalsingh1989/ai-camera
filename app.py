@@ -602,6 +602,7 @@ class Camera:
         self.online, self.motion, self.fps, self.fs = False, False, 0.0, 0.5
         self.last_frame, self.last_connected, self.reconnects = None, None, 0
         self.counts, self.zone_counts, self.fall_since = {}, {}, None
+        self.last_dets = []  # most recent object detections, reused as suggested boxes when capturing a training photo
         self.prebuf = deque(maxlen=45)  # ~3 s of JPEGs so clips start before the event
         self.tracker = Tracker()
         self.learning, self.insp_hist, self.insp_flagged = None, {}, set()
@@ -773,6 +774,7 @@ class Camera:
         dets = ai.objects(f, s["confidence"]) if feat["objects"] else []
         if feat["custom"] and s["custom_classes"] and get_custom():
             dets += get_custom().objects(f, s["custom_confidence"])
+        self.last_dets = dets  # keep for on-demand capture (suggested boxes), matched to self.raw of this frame
         try:
             training_service.sample(self.id, self.raw, dets)
         except Exception:
@@ -981,14 +983,18 @@ def require_login():
 
 @app.route("/")
 def index():
-    return send_from_directory(BASE, "index.html")
+    r = send_from_directory(BASE, "index.html")
+    r.headers["Cache-Control"] = "no-cache"  # always revalidate so UI/JS updates load without a hard refresh
+    return r
 
 
 @app.route("/workspace/<name>")
 def workspace_asset(name):
     if name not in {"workspace.js", "workspace.css"}:
         abort(404)
-    return send_from_directory(BASE, name)
+    r = send_from_directory(BASE, name)
+    r.headers["Cache-Control"] = "no-cache"
+    return r
 
 
 @app.route("/video/<cid>")

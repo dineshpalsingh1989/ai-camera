@@ -82,6 +82,30 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.post('/datasets').status_code,400)
         self.assertEqual(self.post('/capture',{'camera':'missing'}).status_code,400)
 
+    def test_capture_prefills_detection_boxes(self):
+        import numpy as np
+        from types import SimpleNamespace
+        self.ctx['cameras']['cam1'] = SimpleNamespace(id='cam1', name='Test', online=True,
+            raw=np.zeros((100, 200, 3), np.uint8), last_frame=time.time(),
+            last_dets=[('car', 0.9, 20, 10, 180, 90)])
+        photo = self.post('/capture', {'camera': 'cam1', 'split': 'train'}).json
+        self.assertEqual(len(photo['boxes']), 1)
+        box = photo['boxes'][0]
+        self.assertEqual(box['label'], 'car')
+        self.assertAlmostEqual(box['x1'], 0.1); self.assertAlmostEqual(box['x2'], 0.9)
+        self.assertAlmostEqual(box['y1'], 0.1); self.assertAlmostEqual(box['y2'], 0.9)
+
+    def test_model_delete_removes_file_and_protects_active(self):
+        mfile = self.service.path('models/del.pt'); mfile.parent.mkdir(exist_ok=True); mfile.write_bytes(b'x')
+        self.service.state['models']['del'] = {'id':'del','name':'D','file':'models/del.pt','classes':['egg'],'evaluations':{}}
+        self.ctx['settings']['custom_model'] = str(mfile)  # active model must be protected
+        self.assertEqual(self.client.delete('/api/training/models/del').status_code, 400)
+        self.assertTrue(mfile.exists())
+        self.ctx['settings']['custom_model'] = 'previous.pt'  # inactive model deletes with its file
+        self.assertEqual(self.client.delete('/api/training/models/del').status_code, 200)
+        self.assertNotIn('del', self.service.state['models'])
+        self.assertFalse(mfile.exists())
+
     def test_dataset_round_trip_and_snapshot_immutability(self):
         dataset = self.dataset()
         self.assertEqual(dataset['counts'], {'train':4,'val':2})

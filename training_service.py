@@ -267,7 +267,10 @@ class TrainingService:
         names = sorted({b['label'] for p in photos for b in p['boxes']})
         counts = {s: sum(p['split'] == s for p in photos) for s in ('train', 'val', 'test')}
         if counts['train'] < 2 or counts['val'] < 2 or not names:
-            raise ValueError('Review at least 2 training and 2 validation images, including labeled objects. Use separate capture sessions')
+            detail = f"you have {counts['train']} training and {counts['val']} validation reviewed"
+            if not names:
+                detail += " but no labeled objects"
+            raise ValueError(f"Need at least 2 training and 2 validation reviewed images with labeled objects — {detail}. Capture more and set some photos to the Validation split.")
         did = uuid.uuid4().hex[:12]
         folder = self.path('datasets/' + did)
         folder.mkdir(parents=True)
@@ -408,6 +411,19 @@ class TrainingService:
                 self.ctx['custom_det'], self.ctx['custom_error'] = candidate, ''
                 self.state['history'].pop(); self.save()
         self.ctx['sync_cameras']()
+
+    def delete_model(self, mid):
+        model = self.item('models', mid)
+        path = str(self.path(model['file']))
+        if path == str(self.ctx['settings'].get('custom_model') or ''):
+            raise ValueError('This model is active. Activate another model or roll back before deleting it.')
+        if any(h.get('custom_model') == path for h in self.state['history']):
+            raise ValueError('This model is kept for rollback. Activate a newer model first, then delete it.')
+        with self.lock:
+            self.state['models'].pop(mid, None)
+            self.save()
+        self.path(model['file']).unlink(missing_ok=True)
+        return {'ok': True}
         return {'ok': True}
 
     def rf(self, suffix='', method='GET', params=None, **kwargs):
@@ -563,7 +579,11 @@ def register_training(app, context, root=None):
         cam = context['cameras'].get(data.get('camera'))
         if not cam or cam.raw is None or not cam.online or not cam.last_frame or time.time() - cam.last_frame > 15:
             raise ValueError('The camera must be connected and have a current frame')
-        return jsonify(service.add_photo(cv2.imencode('.jpg', cam.raw)[1].tobytes(), cam.id, cam.name, data.get('split', 'train')))
+        frame = cam.raw
+        h, w = frame.shape[:2]
+        suggestions = [{'label': d[0], 'x1': max(0, d[2] / w), 'y1': max(0, d[3] / h),
+                        'x2': min(1, d[4] / w), 'y2': min(1, d[5] / h)} for d in getattr(cam, 'last_dets', [])]
+        return jsonify(service.add_photo(cv2.imencode('.jpg', frame)[1].tobytes(), cam.id, cam.name, data.get('split', 'train'), suggestions))
 
     @bp.post('/import-collected')
     def import_collected():
@@ -710,6 +730,10 @@ def register_training(app, context, root=None):
     @bp.post('/models/<mid>/activate')
     def activate(mid):
         return jsonify(service.activate(mid, request.get_json().get('cameras', [])))
+
+    @bp.delete('/models/<mid>')
+    def delete_model(mid):
+        return jsonify(service.delete_model(mid))
 
     @bp.post('/rollback')
     def rollback():

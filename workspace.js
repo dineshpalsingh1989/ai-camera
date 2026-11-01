@@ -66,8 +66,8 @@
   $('#camera-search').oninput = $('#camera-group').onchange = filterCameras;
   $('#exit-focus').onclick = () => setFocus(null);
   window.updateWorkspaceStatus = status => {
-    if (!S || !status) return;
-    const byId = Object.fromEntries(status.cameras.map(c => [c.id,c]));
+    if (!S) return;  // no settings means nothing to show; a missing status just leaves the live columns blank
+    const byId = Object.fromEntries((status?.cameras || []).map(c => [c.id,c]));
     $('#health-rows').innerHTML = S.cameras.length ? S.cameras.map(c => {
       const live = byId[c.id], age = live?.last_frame ? Date.now()/1000 - live.last_frame : null;
       const healthy = !!live?.online && age != null && age < 15;
@@ -168,7 +168,7 @@
     inputs.forEach(i=>{ i.checked=!all; all?selected.delete(i.dataset.photoSelect):selected.add(i.dataset.photoSelect); }); selectionCount();
   };
   action('#refresh-training', async () => { message('Workspace refreshed'); });
-  action('#capture-photo', async () => { await post('/capture',{camera:$('#learn-camera').value,split:$('#capture-split').value}); message('Photo captured. Review its labels before training.'); });
+  action('#capture-photo', async () => { const camera=$('#learn-camera').value; if(!camera)return message('Select a camera first — add one in Settings → Cameras.',true); await post('/capture',{camera,split:$('#capture-split').value}); message('Photo captured. Review its labels before training.'); });
   action('#import-collected', async () => { const result=await post('/import-collected',{camera:$('#learn-camera').value,split:$('#capture-split').value}); message(`Imported ${result.imported} photos; exact duplicates are skipped.`); });
   function uploadFile(selector, path, field, extra = () => ({})) {
     $(selector).onchange = async e => {
@@ -248,8 +248,8 @@
   function renderModels(){
     const did=$('#evaluate-dataset').value;
     const html=training.models.map(m=>{
-      const metrics=m.evaluations[did], active=training.active_model.replaceAll('\\','/').endsWith('/'+m.file);
-      return `<article class="model-card"><div class="row"><h3>${esc(m.name)}</h3><span class="chip ${active?'reviewed':''}">${active?'Active':'Candidate'}</span></div><p class="hint">${esc(m.classes.join(', '))}</p><div class="model-metrics"><span>Precision<b>${percent(metrics?.precision)}</b></span><span>Recall<b>${percent(metrics?.recall)}</b></span><span>mAP@50<b>${percent(metrics?.map50)}</b></span><span>mAP@50–95<b>${percent(metrics?.map50_95)}</b></span></div><p class="hint">${metrics?'Scores on the selected comparison dataset.':'Not evaluated on the selected dataset.'}</p><div class="row"><button class="btn" data-evaluate="${m.id}" ${!did?'disabled':''}>Evaluate</button><button class="btn primary" data-activate="${m.id}" ${!Object.keys(m.evaluations).length?'disabled':''}>Activate</button><a class="btn" href="${endpoint}/models/${m.id}/download">Download .pt</a></div></article>`;
+      const metrics=m.evaluations[did], active=training.active_model.replaceAll('\\','/').endsWith('/'+m.file.replaceAll('\\','/'));
+      return `<article class="model-card"><div class="row"><h3>${esc(m.name)}</h3><span class="chip ${active?'reviewed':''}">${active?'Active':'Candidate'}</span></div><p class="hint">${esc(m.classes.join(', '))}</p><div class="model-metrics"><span>Precision<b>${percent(metrics?.precision)}</b></span><span>Recall<b>${percent(metrics?.recall)}</b></span><span>mAP@50<b>${percent(metrics?.map50)}</b></span><span>mAP@50–95<b>${percent(metrics?.map50_95)}</b></span></div><p class="hint">${metrics?'Scores on the selected comparison dataset.':'Not evaluated on the selected dataset.'}</p><div class="row"><button class="btn" data-evaluate="${m.id}" ${!did?'disabled':''}>Evaluate</button><button class="btn primary" data-activate="${m.id}" ${!Object.keys(m.evaluations).length?'disabled':''}>Activate</button><a class="btn" href="${endpoint}/models/${m.id}/download">Download .pt</a><button class="btn danger" data-delete-model="${m.id}" ${active?'disabled':''} title="${active?'Active model cannot be deleted':'Delete this model'}">Delete</button></div></article>`;
     }).join('')||emptyState('scan','No custom candidates yet','Train a model, import a compatible .pt file, or download weights from Roboflow.');
     setHTML($('#model-list'),html);
     $$('[data-evaluate]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await post('/models/'+button.dataset.evaluate+'/evaluate',{dataset:$('#evaluate-dataset').value});message('Evaluation started on held-out validation images.');await loadTraining();}catch(err){message(err.message,true);}finally{button.disabled=false;}});
@@ -257,6 +257,11 @@
       const ids=$$('#activation-cameras input:checked').map(i=>i.value);if(!ids.length)return message('Select the cameras that should use this custom model.',true);
       button.disabled=true;
       try{await post('/models/'+button.dataset.activate+'/activate',{cameras:ids});await refreshSettings();message('Custom model activated. Previous model is available for rollback.');await loadTraining();}catch(err){message(err.message,true);}finally{button.disabled=false;}
+    });
+    $$('[data-delete-model]').forEach(button=>button.onclick=async()=>{
+      if(!confirm('Delete this model permanently? This cannot be undone.'))return;
+      button.disabled=true;
+      try{await api(endpoint+'/models/'+button.dataset.deleteModel,{method:'DELETE'});message('Model deleted.');await loadTraining();}catch(err){message(err.message,true);button.disabled=false;}
     });
   }
   $('#evaluate-dataset').onchange=renderModels;
