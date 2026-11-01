@@ -14,3 +14,6 @@ __pycache__/
 weights/
 demo-videos/
 *.pt
+
+# private training data, credentials, jobs and model registry
+ai-workspace/

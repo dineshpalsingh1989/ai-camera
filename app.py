@@ -73,6 +73,7 @@ def load_settings():
         c["features"] = {**FEATURES, **c.get("features", {})}
         c.setdefault("zones", [])
         c.setdefault("lines", [])
+        c.setdefault("group", "")
         c["inspection"] = clean_inspection(c.get("inspection") or {}, COCO + s["custom_classes"])
     return s
 
@@ -108,9 +109,11 @@ def clean_inspection(d, known):
 def clean_settings(d):
     """Validate settings posted from the browser; missing fields keep their current value."""
     s = json.loads(json.dumps(settings))
+    model_path = str(d.get("custom_model") or s["custom_model"]).strip()
+    normalize_class = str.lower if "world" in os.path.basename(model_path).lower() else lambda value: value
     s["custom_classes"] = list(dict.fromkeys(
-        x for x in (str(v).strip().lower()[:40] for v in d.get("custom_classes", s["custom_classes"])) if x))[:20]
-    s["custom_model"] = str(d.get("custom_model") or s["custom_model"]).strip()
+        x for x in (normalize_class(str(v).strip())[:80] for v in d.get("custom_classes", s["custom_classes"])) if x))[:200]
+    s["custom_model"] = model_path
     s["custom_confidence"] = num(d.get("custom_confidence", s["custom_confidence"]), 0.01, 0.95)
     known = COCO + s["custom_classes"]
     cams = []
@@ -122,6 +125,7 @@ def clean_settings(d):
             "id": re.sub(r"\W", "", str(c.get("id", ""))) or uuid.uuid4().hex[:6],
             "name": str(c.get("name") or "Camera")[:40],
             "location": str(c.get("location") or "")[:60],
+            "group": str(c.get("group") or "").strip()[:60],
             "conn": {k: str(v)[:300] for k, v in (c.get("conn") or {}).items() if k in CONN_KEYS},
             "source": src,
             "enabled": bool(c.get("enabled", True)),
@@ -596,6 +600,7 @@ class Camera:
         self.paused = False  # AI paused from the dashboard (video keeps streaming)
         self.collecting = None  # [saved, wanted] while saving training photos
         self.online, self.motion, self.fps, self.fs = False, False, 0.0, 0.5
+        self.last_frame, self.last_connected, self.reconnects = None, None, 0
         self.counts, self.zone_counts, self.fall_since = {}, {}, None
         self.prebuf = deque(maxlen=45)  # ~3 s of JPEGs so clips start before the event
         self.tracker = Tracker()
@@ -620,6 +625,8 @@ class Camera:
         shown = 0.0
         while self.running:
             cap = open_capture(self.cfg["source"])
+            if cap.isOpened():
+                self.last_connected = time.time()
             delay = 1 / (cap.get(cv2.CAP_PROP_FPS) or 25) if is_file else 0
             while self.running and cap.isOpened():
                 ok, f = cap.read()
@@ -629,10 +636,12 @@ class Camera:
                     shown = time.time()
                     self._show(f)  # before handing f to the AI thread, which draws on it
                 self.frame, self.online = f, True
+                self.last_frame = time.time()
                 time.sleep(delay)
             cap.release()
             if self.running and not is_file:
                 self.online = False
+                self.reconnects += 1
                 time.sleep(3)
 
     def _show(self, f):
@@ -764,6 +773,10 @@ class Camera:
         dets = ai.objects(f, s["confidence"]) if feat["objects"] else []
         if feat["custom"] and s["custom_classes"] and get_custom():
             dets += get_custom().objects(f, s["custom_confidence"])
+        try:
+            training_service.sample(self.id, self.raw, dets)
+        except Exception:
+            pass  # collection must never interrupt monitoring; library capacity is shown in Training
         tracked = self.tracker.update(dets)
         for tid, t, new in tracked:
             label, (x1, y1, x2, y2), foot = t["label"], t["box"], t["trail"][-1]
@@ -954,6 +967,8 @@ def sync_cameras():
 # ---------------------------------------------------------------- web
 
 app = Flask(__name__)
+from training_service import register_training
+training_service = register_training(app, globals())
 
 
 @app.before_request
@@ -967,6 +982,13 @@ def require_login():
 @app.route("/")
 def index():
     return send_from_directory(BASE, "index.html")
+
+
+@app.route("/workspace/<name>")
+def workspace_asset(name):
+    if name not in {"workspace.js", "workspace.css"}:
+        abort(404)
+    return send_from_directory(BASE, name)
 
 
 @app.route("/video/<cid>")
@@ -990,7 +1012,7 @@ def frame(cid):
     """Newest live-view picture. The dashboard polls this instead of an endless MJPEG stream: browsers allow
     only ~6 open connections per server, and long streams from several tabs used them up (tiles went black)."""
     cam = cameras.get(cid) or abort(404)
-    if cam.jpeg is None:
+    if cam.jpeg is None or not cam.online or not cam.last_frame or time.time() - cam.last_frame > 15:
         abort(404)
     return Response(cam.jpeg, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
 
@@ -1076,6 +1098,8 @@ def status():
         st = json.loads(json.dumps(stats))
     return jsonify(ai_ok=ai is not None, ai_backend=ai.label if ai else "", ai_error=ai_error, stats=st, cameras=[
         {"id": c.id, "name": c.name, "online": c.online, "fps": round(c.fps, 1), "motion": c.motion,
+         "group": c.cfg.get("group", ""), "last_frame": c.last_frame, "last_connected": c.last_connected,
+         "reconnects": c.reconnects,
          "recording": c.clip is not None, "counts": c.counts, "zones": c.zone_counts,
          "features": c.cfg["features"], "paused": c.paused,
          "inspection": {**c.insp, "enabled": c.cfg["inspection"]["enabled"],
@@ -1084,6 +1108,12 @@ def status():
 
 @app.route("/api/events", methods=["GET", "DELETE"])
 def api_events():
+    try:
+        limit = num(request.args.get("limit", 200), 1, 500, int)
+        after = float(request.args.get("after", 0))
+        before = float(request.args.get("before", "inf"))
+    except (ValueError, TypeError):
+        return jsonify(error="Invalid event date or limit"), 400
     with ev_lock:
         if request.method == "DELETE":
             for p in glob.glob(os.path.join(EVENTS_DIR, "*.jpg")) + glob.glob(os.path.join(EVENTS_DIR, "*.mp4")):
@@ -1091,8 +1121,32 @@ def api_events():
             events.clear()
             save_events()
         cam, kind = request.args.get("camera"), request.args.get("type")
-        out = [e for e in reversed(events) if (not cam or e["camera_id"] == cam) and (not kind or e["type"] == kind)]
-    return jsonify(out[:int(request.args.get("limit", 200))])
+        review, severity = request.args.get("review"), request.args.get("severity")
+        out = [{**e, "severity": event_severity(e), "reviewed": e.get("reviewed", False)} for e in reversed(events)
+               if (not cam or e["camera_id"] == cam) and (not kind or e["type"] == kind)
+               and after <= e["time"] < before
+               and (not review or bool(e.get("reviewed")) == (review == "reviewed"))
+               and (not severity or event_severity(e) == severity)]
+    return jsonify(out[:limit])
+
+
+def event_severity(event):
+    return "high" if event["type"] in {"fall", "intrusion"} else "medium" if event["type"] in {"anomaly", "loitering"} else "low"
+
+
+@app.route("/api/events/<eid>/review", methods=["POST"])
+def review_event(eid):
+    data = request.get_json(silent=True) or {}
+    if data.get("outcome", "confirmed") not in {"confirmed", "false_alarm", "unreviewed"}:
+        return jsonify(error="Choose confirmed, false alarm or unreviewed"), 400
+    with ev_lock:
+        event = next((e for e in events if e["id"] == eid), None)
+        if event is None:
+            abort(404)
+        event.update(reviewed=data.get("outcome") != "unreviewed", outcome=data.get("outcome", "confirmed"),
+                     review_note=str(data.get("note", ""))[:1000], reviewed_at=time.time())
+        save_events()
+    return jsonify(ok=True)
 
 
 @app.route("/events/<path:name>")

@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Camera</title>
+<meta name="theme-color" content="#10171f">
+<title>Live overview · AI Camera</title>
+<link rel="stylesheet" href="/workspace/workspace.css">
 <style>
   :root { --bg:#0b0d12; --panel:#141821; --panel2:#1b2030; --line:#262c3b; --text:#e7eaf0; --muted:#8a93a6;
           --accent:#4f8cff; --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b; --violet:#a855f7; }
@@ -101,50 +103,256 @@
   .hbar b { text-align:right; font-variant-numeric:tabular-nums; }
   table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:500; } td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  /* Workspace shell and dashboard design system. */
+  :root { color-scheme:dark; --bg:#0c1117; --panel:#141c25; --panel2:#1d2935; --line:#25313e; --text:#edf2f6;
+    --muted:#9aaaba; --accent:#57dfbf; --ok:#57dfbf; --bad:#f57e88; --warn:#e9b96e; --violet:#bcabf4; }
+  body { font-family:Inter,"Segoe UI",system-ui,sans-serif; font-size:13px; line-height:1.55; }
+  button, input, select { font:inherit; }
+  button, a, input, select { -webkit-tap-highlight-color:transparent; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .icon { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex:none; vertical-align:middle; }
+  .icon-defs { position:absolute; width:0; height:0; overflow:hidden; }
+  .skip-link { position:fixed; left:12px; top:-60px; z-index:50; padding:10px 18px; background:var(--accent); color:#09251d; border-radius:8px; }
+  .skip-link:focus { top:12px; }
+  .sidebar { position:fixed; inset:0 auto 0 0; width:220px; display:flex; flex-direction:column; padding:30px 16px 20px; background:#10171f; border-right:1px solid var(--line); z-index:10; }
+  .logo { padding:0 12px 34px; gap:11px; font-size:19px; letter-spacing:-.5px; }
+  .brand-mark { display:grid; place-items:center; width:35px; height:35px; border:1px solid #2a6458; border-radius:10px; background:#18382f; color:var(--accent); }
+  .brand-mark .icon { width:23px; height:23px; }
+  .logo small { display:block; font-size:9px; letter-spacing:1.3px; white-space:nowrap; font-weight:500; margin-top:1px; }
+  .nav-label { margin:0 14px 13px; font-size:10px; letter-spacing:1.6px; font-weight:600; color:#748698; }
+  nav { flex-direction:column; gap:6px; }
+  nav button { display:flex; align-items:center; gap:12px; padding:12px 14px; font-size:13px; text-align:left; border:1px solid transparent; border-radius:8px; }
+  nav button:hover { background:#19232e; color:var(--text); }
+  nav button.active { background:#19352f; color:#79e8cd; border-color:#285144; }
+  .nav-count { margin-left:auto; font-size:11px; background:#285044; border-radius:5px; padding:0 6px; min-width:20px; text-align:center; }
+  .sidebar-bottom { margin-top:auto; }
+  .edge-note { margin:24px 4px; padding:15px 12px; border:1px solid var(--line); border-radius:10px; color:var(--muted); font-size:11px; }
+  .edge-note .icon { color:var(--accent); margin-bottom:8px; }
+  .edge-note strong { display:block; color:#d3dfe8; font-size:12px; margin-bottom:4px; font-weight:500; }
+  .workspace-label { display:flex; align-items:center; gap:10px; padding:16px 10px 0; border-top:1px solid var(--line); }
+  .workspace-avatar { display:grid; place-items:center; width:32px; height:32px; background:var(--panel2); border-radius:8px; color:#b5c7d8; font-weight:600; font-size:11px; }
+  .workspace-label strong, .workspace-label small { display:block; font-size:11px; font-weight:500; }
+  header { margin-left:220px; height:72px; padding:0 32px; flex-wrap:nowrap; gap:16px; background:rgba(12,17,23,.94); backdrop-filter:blur(16px); }
+  .breadcrumb { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px; }
+  .breadcrumb strong { color:#dbe4ed; font-weight:500; }
+  .breadcrumb .icon { width:14px; height:14px; color:#5e7082; }
+  .header-time { display:flex; flex-direction:column; text-align:right; min-width:90px; font-size:11px; border-left:1px solid var(--line); padding-left:18px; }
+  #clock { color:var(--text); font-size:12px; }
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:5px 10px; font-size:10px; font-weight:600; border:1px solid var(--line); background:#19232d; color:var(--muted); }
+  .pill::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .pill.ok { background:#142d27; border-color:#245042; color:#7ce3c8; }
+  .pill.bad { background:#342029; border-color:#61333c; color:#ffabb3; }
+  main { margin-left:220px; max-width:none; padding:28px 32px 24px; }
+  main > section, .camera-workspace, .live > aside { min-width:0; }
+  .page-heading { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:26px; }
+  .eyebrow { display:flex; align-items:center; gap:7px; font-size:10px; font-weight:600; letter-spacing:1.7px; color:var(--accent); margin-bottom:6px; }
+  .eyebrow .dot { width:5px; height:5px; }
+  h1 { font-size:29px; line-height:1.25; letter-spacing:-1px; font-weight:600; margin:0 0 8px; }
+  .page-heading p { margin:0; color:var(--muted); font-size:12px; }
+  .btn { display:inline-flex; justify-content:center; align-items:center; gap:7px; background:#1a2530; border:1px solid #303e4c; border-radius:7px; padding:8px 12px; font-size:11px; font-weight:500; transition:background .15s,border-color .15s; }
+  .btn:hover { background:#253543; border-color:#526877; }
+  .btn.primary { color:#09271f; background:var(--accent); border-color:var(--accent); font-weight:650; }
+  .btn.primary:hover { background:#85ecd2; border-color:#85ecd2; }
+  .btn.danger { background:#342029; border-color:#61333c; color:#ffabb3; }
+  .btn.on { background:#3b3020; border-color:#7c6238; color:#f1cd91; }
+  .btn .icon { width:15px; height:15px; }
+  .kpis { grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:28px; }
+  .kpi { padding:16px 17px 13px; border-radius:10px; position:relative; min-width:0; }
+  .kpi-top { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:14px; }
+  .kpi small { font-size:11px; font-weight:500; }
+  .kpi-icon { display:grid; place-items:center; width:29px; height:29px; border-radius:7px; background:#1c3034; color:#7ed8cc; }
+  .kpi:nth-child(2) .kpi-icon { background:#222f43; color:#9cbcf5; }
+  .kpi:nth-child(3) .kpi-icon { background:#2d2840; color:#c3b1eb; }
+  .kpi:nth-child(4) .kpi-icon { background:#2e3032; color:#c9c5a0; }
+  .kpi:nth-child(5) .kpi-icon { background:#372a26; color:#efbc8e; }
+  .kpi b { display:block; font-size:29px; font-weight:600; line-height:1.2; letter-spacing:-.8px; }
+  .kpi-note { display:block; color:#8c9dac; font-size:10px; margin-top:9px; }
+  .kpi-note .dot { display:inline-block; width:5px; height:5px; margin-right:5px; vertical-align:middle; }
+  .live { grid-template-columns:minmax(0,1fr) 304px; gap:22px; align-items:start; }
+  .section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; min-height:34px; }
+  .section-heading h2 { margin:0; font-size:15px; font-weight:600; display:flex; align-items:center; gap:9px; letter-spacing:-.2px; }
+  .count-label { display:inline-flex; align-items:center; justify-content:center; background:#202d39; border:1px solid #30404d; padding:0 6px; border-radius:5px; font-size:10px; color:#b1c1cf; font-weight:500; min-width:22px; }
+  .camera-tools { display:flex; align-items:center; gap:7px; }
+  .camera-tools label { margin:0; }
+  .camera-tools select { padding:7px 9px; font-size:11px; background:var(--panel); }
+  .camera-tools .btn { font-size:10px; }
+  .grid { gap:16px; grid-template-columns:repeat(var(--cols,2),minmax(0,1fr)); }
+  .tile { border-radius:10px; min-width:0; display:flex; flex-direction:column; }
+  .tile-head { padding:13px 14px; gap:9px; flex-wrap:nowrap; min-height:64px; }
+  .tile-title { flex:1; min-width:0; }
+  .tile-title b { display:block; font-size:12px; font-weight:550; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tile-title small { display:block; font-size:10px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .camera-number { color:#88a0b2; font-size:10px; font-variant-numeric:tabular-nums; width:27px; height:28px; border:1px solid #30404c; border-radius:6px; display:grid; place-items:center; }
+  .camera-signal { display:flex; align-items:center; gap:5px; font-size:9px; white-space:nowrap; color:#a6b8c7; }
+  .dot { width:6px; height:6px; }
+  .dot.on { box-shadow:0 0 7px #57dfbf22; }
+  .view { aspect-ratio:16/9; background:#080d12; overflow:hidden; flex-shrink:0; }
+  .view img { position:relative; width:100%; height:100%; opacity:0; }
+  .view.has-frame img { opacity:1; }
+  .view.has-frame.frame-stale img { opacity:.3; }
+  .view-placeholder { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:10px; color:#8193a3; text-align:center; padding:20px; font-size:11px; }
+  .view-placeholder .icon { width:30px; height:30px; color:#4c6579; }
+  .view.has-frame:not(.frame-stale) .view-placeholder { display:none; }
+  .view-label { position:absolute; top:10px; left:10px; display:flex; align-items:center; gap:6px; border:1px solid #ffffff24; border-radius:4px; padding:3px 7px; font-size:8px; letter-spacing:1px; background:#0b141bd9; color:#a0b3c0; }
+  .view.has-frame:not(.frame-stale):not(.frozen) .view-label { color:#91e8ce; }
+  .view.frozen .view-label { color:#edc78f; }
+  .view-label::before { content:''; width:4px; height:4px; background:currentColor; border-radius:50%; }
+  .rec { border-radius:4px; top:10px; right:10px; font-size:9px; background:#bd3644; animation:none; }
+  .tile-foot { padding:10px 12px; gap:5px; }
+  .tile-foot.counts { min-height:39px; flex-wrap:wrap; }
+  .tile-foot.counts small { font-size:10px; }
+  .tile-actions { border-top:1px solid var(--line); padding:9px; display:flex; flex-wrap:wrap; gap:5px; margin-top:auto; }
+  .tile-actions .btn { flex:1 0 auto; min-height:30px; padding:5px 6px; font-size:10px; background:transparent; border-color:transparent; gap:5px; color:#adbdca; }
+  .tile-actions .btn:hover { background:var(--panel2); color:var(--text); }
+  .tile-actions .btn.on { color:#f1cd91; background:#3b3020; }
+  .tile-actions .btn .icon { width:13px; height:13px; }
+  .badges { padding:0 12px; gap:4px; }
+  .badges:empty { display:none; }
+  .badges:not(:empty) { padding-top:9px; }
+  .chip { font-size:9px; padding:3px 7px; border-radius:5px; }
+  .chip.ai { background:#203248; color:#b5cef0; }
+  .chip.alert { background:#3f2630; color:#ffc1c7; }
+  .chip.zone { background:#302941; color:#d3bfed; }
+  .camera-summary { margin-top:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:10px; color:#8da0b2; }
+  .camera-summary .icon { width:13px; height:13px; }
+  #totals { gap:5px; }
+  .card { border-radius:10px; padding:20px; }
+  .card h2 { font-weight:600; font-size:14px; }
+  .activity-panel { padding:0; overflow:hidden; }
+  .activity-heading { padding:18px 17px 14px; border-bottom:1px solid var(--line); }
+  .activity-heading h2 { margin:0 0 4px; font-size:14px; }
+  .activity-heading p { color:var(--muted); margin:0; font-size:10px; }
+  .feed { max-height:650px; gap:0; }
+  .ev-row { width:100%; font:inherit; text-align:left; color:var(--text); background:transparent; border:0; border-bottom:1px solid #24303c; padding:14px; border-radius:0; gap:10px; }
+  .ev-row:last-child { border-bottom:0; }
+  .ev-row img { width:65px; height:48px; border:1px solid #30404d; border-radius:5px; }
+  .event-copy { min-width:0; flex:1; }
+  .event-copy .event-label { display:block; font-size:12px; margin:4px 0 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .event-copy small { display:block; font-size:10px; }
+  .type { font-size:8px; letter-spacing:.5px; padding:2px 5px; font-weight:600; }
+  .activity-footer { display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none; padding:12px; border-top:1px solid var(--line); color:#b9cbd9; font-size:11px; }
+  .activity-footer:hover { background:var(--panel2); color:var(--accent); }
+  .activity-footer .icon { width:14px; height:14px; }
+  .system-strip { margin-top:27px; padding-top:16px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:12px; color:#8094a5; font-size:10px; }
+  .system-strip span { display:flex; align-items:center; gap:6px; }
+  .system-strip .icon { width:13px; height:13px; }
+  .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:44px 20px; text-align:center; color:var(--muted); grid-column:1 / -1; }
+  .empty-state .icon { width:32px; height:32px; color:#5f817e; margin-bottom:4px; }
+  .empty-state strong { font-size:13px; color:#dce6ed; font-weight:500; }
+  .empty-state p { max-width:270px; font-size:11px; margin:0 0 7px; }
+  .error-banner { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 16px; margin-bottom:20px; border:1px solid #61333c; background:#342029; color:#ffc1c7; border-radius:8px; font-size:12px; }
+  .filter-bar { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .ev-card { text-align:left; color:var(--text); padding:0; font:inherit; }
+  .ev-card:hover { border-color:#4c716c; }
+  .ev-card > div { padding:13px; }
+  .ev-card small { font-size:11px; }
+  #a-kpis { grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); }
+  #a-kpis .kpi b { margin-top:10px; }
+  .chart .bar:hover, .chart .bar.hot { fill:#9cf3dc; }
+  input[type=text], input[type=password], input[type=number], select { padding:9px 11px; font-size:12px; min-width:0; max-width:100%; border-color:#334250; }
+  input[type=checkbox], input[type=range] { accent-color:var(--accent); }
+  label, .hint { font-size:12px; }
+  .two, .cam-layout { gap:22px; }
+  .two > *, .cam-layout > * { min-width:0; }
+  .cam-list button.active { background:#19352f; border-color:#3b7d69; }
+  .seg button { font-size:11px; }
+  .seg button.active { color:#09271f; }
+  #c-features { gap:4px 16px; }
+  .savebar { background:rgba(12,17,23,.96); backdrop-filter:blur(12px); gap:14px; }
+  #modal { backdrop-filter:blur(12px); background:#05090eea; }
+  #modal-body { min-height:0; max-width:100%; }
+  #modal-body img, #modal-body video { border-radius:9px; border:1px solid var(--line); }
+  body.modal-open { overflow:hidden; }
+  @media (min-width:1900px) { main { max-width:1800px; margin-right:auto; } }
+  @media (max-width:1350px) { .sidebar { width:190px; } header, main { margin-left:190px; } header { padding:0 24px; } main { padding:24px; } .live { grid-template-columns:minmax(0,1fr) 280px; gap:18px; } .kpi { padding:14px 12px; } .kpi-icon { width:24px; height:24px; } }
+  @media (max-width:1150px) { .sidebar { width:76px; padding:25px 10px 18px; } .logo { padding:0 10px 32px; } .brand-copy, .nav-label, nav .nav-text, .nav-count, .edge-note, .workspace-copy { display:none; } nav button { justify-content:center; padding:14px; } .workspace-label { padding:16px 10px 0; } header, main { margin-left:76px; } .live { grid-template-columns:minmax(0,1fr) 270px; } .kpi small { font-size:10px; } .kpi b { font-size:25px; } }
+  @media (max-width:950px) { .live { grid-template-columns:1fr; } .feed { display:grid; grid-template-columns:1fr 1fr; max-height:330px; } .ev-row { border-right:1px solid var(--line); } .ev-row:last-child { border-bottom:1px solid var(--line); } .activity-heading { padding:16px; } .kpi-top { align-items:flex-start; } .kpi-icon { display:none; } .kpi-note { font-size:9px; } }
+  @media (max-width:700px) { .sidebar { position:relative; width:100%; padding:15px 16px 10px; border-right:0; border-bottom:1px solid var(--line); } .logo { padding:0 0 16px; font-size:17px; } .brand-copy { display:block; } .logo small { display:none; } .brand-mark { width:29px; height:29px; } .sidebar-bottom { display:none; } nav { flex-direction:row; flex-wrap:nowrap; gap:4px; } nav button { flex:1; gap:7px; padding:9px 5px; font-size:11px; } nav .nav-text { display:inline; } nav .icon { width:15px; height:15px; } header, main { margin-left:0; } header { height:54px; padding:0 18px; gap:8px; } .breadcrumb { font-size:10px; gap:7px; } .breadcrumb > span, .breadcrumb > .icon { display:none; } .header-time { padding-left:10px; min-width:auto; font-size:9px; } #clock { font-size:10px; } .pill { font-size:9px; padding:4px 7px; } main { padding:22px 16px; } .page-heading { align-items:flex-start; gap:12px; margin-bottom:22px; } h1 { font-size:25px; } .page-heading p { font-size:11px; max-width:230px; } .page-heading > .btn { padding:8px; font-size:10px; margin-top:21px; } .page-heading > .btn .icon { display:none; } .eyebrow { font-size:9px; } .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-bottom:22px; } .kpi { padding:13px; } .kpi-top { margin-bottom:7px; align-items:center; } .kpi-icon { display:grid; } #live > .kpis > .kpi:last-child { grid-column:1 / -1; display:grid; grid-template-columns:1fr auto; gap:0 10px; align-items:center; } #live > .kpis > .kpi:last-child .kpi-top { margin:0; } #live > .kpis > .kpi:last-child .kpi-icon { display:none; } #live > .kpis > .kpi:last-child b { grid-column:2; grid-row:1 / 3; } #live > .kpis > .kpi:last-child .kpi-note { margin-top:3px; } .section-heading h2 { font-size:14px; } .camera-tools { gap:5px; } .camera-tools select { padding:6px; font-size:10px; } .camera-tools .btn { padding:7px; font-size:9px; } .feed { grid-template-columns:1fr; } .system-strip { align-items:flex-start; flex-direction:column; margin-top:22px; } .card { padding:16px; } .activity-panel { padding:0; } .filter-bar { gap:10px; } .filter-bar select { flex:1; } .filter-bar .spacer { display:none; } .two { gap:14px; } .cam-layout { gap:16px; } .tile-actions .btn { padding:7px 5px; } }
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
 </style>
 </head>
 <body>
-<header>
-  <div class="logo"><i></i>AI Camera</div>
-  <nav>
-    <button class="active" data-tab="live">Live</button><button data-tab="events">Events</button>
-    <button data-tab="analytics">Analytics</button><button data-tab="settings">Settings</button>
+<svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="m16 10 5-3v10l-5-3"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><rect x="7" y="4" width="4" height="6" rx="1"/><rect x="14" y="14" width="4" height="6" rx="1"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/><rect x="8" y="8" width="8" height="8" rx="2"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 4v3"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="m4 10 2-6h12l2 6M4 10h16a1 1 0 0 1 1 1v7H3v-7a1 1 0 0 1 1-1ZM5 18v3m14-3v3M6 14h2m8 0h2"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></symbol>
+  <symbol id="i-photo" viewBox="0 0 24 24"><path d="m8 5 2-2h4l2 2h4v15H4V5h4Z"/><circle cx="12" cy="12" r="4"/></symbol>
+  <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2 12h5l3-8 4 16 3-8h5"/></symbol>
+</defs></svg>
+<a class="skip-link" href="#main-content">Skip to dashboard</a>
+<aside class="sidebar" aria-label="Workspace">
+  <div class="logo"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg></span><span class="brand-copy">AI Camera<small>VISION WORKSPACE</small></span></div>
+  <div class="nav-label">WORKSPACE</div>
+  <nav aria-label="Main navigation">
+    <button class="active" data-tab="live" aria-current="page" title="Live overview"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span class="nav-text">Live overview</span><span id="nav-camera-count" class="nav-count">–</span></button>
+    <button data-tab="events" title="Event history"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span class="nav-text">Event history</span></button>
+    <button data-tab="analytics" title="Analytics"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><span class="nav-text">Analytics</span></button>
+    <button data-tab="training" title="AI Training"><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg><span class="nav-text">AI Training</span></button>
+    <button data-tab="health" title="Camera health"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg><span class="nav-text">Camera health</span></button>
+    <button data-tab="settings" title="Settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg><span class="nav-text">Settings</span></button>
   </nav>
+  <div class="sidebar-bottom">
+    <div class="edge-note"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><strong>Intelligence at the edge</strong>Camera processing and AI detection run on this device.</div>
+    <div class="workspace-label"><span class="workspace-avatar">AI</span><span class="workspace-copy"><strong>Local workspace</strong><small>Self-hosted monitoring</small></span></div>
+  </div>
+</aside>
+<header>
+  <div class="breadcrumb"><span>Workspace</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg><strong id="breadcrumb-current">Live overview</strong></div>
   <span class="spacer"></span>
-  <span id="ai" class="pill">AI …</span><span id="clock"></span>
+  <span id="ai" class="pill" role="status">Connecting</span><div class="header-time"><span id="clock"></span><span id="date" class="muted"></span></div>
 </header>
 
-<main>
+<main id="main-content" tabindex="-1">
+  <div id="connection-error" class="error-banner hidden" role="alert"><span id="connection-message"></span><button class="btn" id="retry-connection">Retry connection</button></div>
+  <div class="page-heading">
+    <div><div class="eyebrow" id="page-eyebrow"><span class="dot on"></span>MONITORING WORKSPACE</div><h1 id="page-title">Live overview</h1><p id="page-description">Your cameras, activity, and alerts. All in one place.</p></div>
+    <button class="btn primary" data-goto="settings" id="manage-cameras"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg>Manage cameras</button>
+  </div>
   <!-- LIVE -->
   <section id="live">
     <div class="kpis">
-      <div class="kpi"><small>Cameras online</small><b id="k-online">–</b></div>
-      <div class="kpi"><small>Objects in view</small><b id="k-now">–</b></div>
-      <div class="kpi"><small>People today</small><b id="k-people">–</b></div>
-      <div class="kpi"><small>Vehicles today</small><b id="k-vehicles">–</b></div>
-      <div class="kpi"><small>Alerts today</small><b id="k-alerts">–</b></div>
+      <div class="kpi"><div class="kpi-top"><small>Cameras online</small><span class="kpi-icon"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg></span></div><b id="k-online">–</b><span class="kpi-note" id="online-note">Waiting for camera status</span></div>
+      <div class="kpi"><div class="kpi-top"><small>Objects in view</small><span class="kpi-icon"><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg></span></div><b id="k-now">–</b><span class="kpi-note">Across all active cameras</span></div>
+      <div class="kpi"><div class="kpi-top"><small>People today</small><span class="kpi-icon"><svg class="icon" aria-hidden="true"><use href="#i-people"/></svg></span></div><b id="k-people">–</b><span class="kpi-note">Unique tracked detections</span></div>
+      <div class="kpi"><div class="kpi-top"><small>Vehicles today</small><span class="kpi-icon"><svg class="icon" aria-hidden="true"><use href="#i-car"/></svg></span></div><b id="k-vehicles">–</b><span class="kpi-note">Cars, bikes, buses &amp; trucks</span></div>
+      <div class="kpi"><div class="kpi-top"><small>Alerts today</small><span class="kpi-icon"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></span></div><b id="k-alerts">–</b><span class="kpi-note">Excluding motion-only events</span></div>
     </div>
     <div class="live">
-      <div>
-        <div class="row" style="margin-bottom:10px"><span class="muted">Layout</span>
-          <select id="cols"><option value="1">1 × 1</option><option value="2" selected>2 columns</option><option value="3">3 columns</option><option value="4">4 columns</option></select>
-          <button class="btn" id="pause-all">⏸ Pause all AI</button>
-          <span id="totals" class="row"></span></div>
+      <div class="camera-workspace">
+        <div class="section-heading"><h2>Camera feeds <span class="count-label" id="camera-count">–</span></h2>
+          <div class="camera-tools"><label for="cols" class="hidden">Camera grid columns</label><select id="cols" aria-label="Camera grid columns"><option value="1">1 column</option><option value="2" selected>2 columns</option><option value="3">3 columns</option><option value="4">4 columns</option></select>
+          <button class="btn" id="pause-all" disabled>Pause all AI</button></div></div>
+        <div class="camera-filters row"><input type="search" id="camera-search" placeholder="Search cameras or locations" aria-label="Search cameras"><select id="camera-group" aria-label="Camera group"><option value="">All groups</option></select><button class="btn hidden" id="exit-focus">Exit focus</button></div>
+        <p id="camera-filter-empty" class="hint hidden">No cameras match these filters.</p>
         <div id="grid" class="grid"></div>
+        <div class="camera-summary"><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg><span>Objects in view</span><span id="totals" class="row"></span></div>
       </div>
-      <aside class="card"><h2>Latest alerts <a class="btn" href="#" data-goto="events">All events</a></h2><div id="feed" class="feed"></div></aside>
+      <aside class="card activity-panel"><div class="activity-heading"><h2>Recent activity <span class="count-label" id="feed-count">–</span></h2><p>Latest alerts from your cameras</p><button class="btn danger" id="feed-clear" type="button">Clear</button></div><div id="feed" class="feed"><div class="empty-state"><p>Loading recent activity…</p></div></div><a class="activity-footer" href="#events" data-goto="events">View all events<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></aside>
     </div>
+    <div class="system-strip"><span><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Processing on this device</span><span id="last-sync"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg>Waiting for an update</span></div>
   </section>
 
   <!-- EVENTS -->
   <section id="events" class="hidden">
-    <div class="row" style="margin-bottom:12px">
-      <select id="f-cam"><option value="">All cameras</option></select>
-      <select id="f-type"><option value="">All types</option><option value="object">Object</option><option value="intrusion">Intrusion</option>
+    <div class="row filter-bar" style="margin-bottom:16px">
+      <select id="f-cam" aria-label="Filter by camera"><option value="">All cameras</option></select>
+      <select id="f-type" aria-label="Filter by event type"><option value="">All types</option><option value="object">Object</option><option value="intrusion">Intrusion</option>
         <option value="loitering">Loitering</option><option value="fall">Fall</option><option value="motion">Motion</option><option value="manual">Manual</option><option value="anomaly">Anomaly (inspection)</option></select>
       <button class="btn" id="refresh">Refresh</button><span class="spacer"></span>
       <button class="btn danger" id="clear">Delete all events</button>
     </div>
+    <div class="row filter-bar event-filters"><label>From <input type="date" id="f-from"></label><label>Through <input type="date" id="f-to"></label><select id="f-severity" aria-label="Severity"><option value="">All severities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select><select id="f-review" aria-label="Review status"><option value="">All review states</option><option value="unreviewed">Needs review</option><option value="reviewed">Reviewed</option></select></div>
     <div id="ev-grid" class="cards"></div>
   </section>
 
@@ -163,7 +371,8 @@
 
   <!-- SETTINGS -->
   <section id="settings" class="hidden">
-    <div class="card">
+    <div class="seg settings-tabs" role="tablist" aria-label="Settings category"><button class="active" data-settings="cameras" role="tab" aria-selected="true">Cameras</button><button data-settings="detection" role="tab" aria-selected="false">Detection</button><button data-settings="recording" role="tab" aria-selected="false">Recording</button><button data-settings="notifications" role="tab" aria-selected="false">Notifications</button><button data-settings="login" role="tab" aria-selected="false">Login</button></div>
+    <div class="card" data-settings-pane="cameras">
       <h2>Cameras</h2>
       <div class="cam-layout">
         <div class="cam-list"><div id="cam-list"></div><button class="btn" id="add-cam">+ Add camera</button></div>
@@ -171,6 +380,7 @@
           <div class="two">
             <div><label>Camera name</label><input type="text" id="c-name" placeholder="e.g. Front gate"></div>
             <div><label>Location / notes</label><input type="text" id="c-location" placeholder="e.g. Ground floor, facing the road"></div>
+            <div><label>Camera group</label><input type="text" id="c-group" placeholder="e.g. Ground floor or Production"></div>
           </div>
           <label>Connection type</label>
           <div class="seg" id="c-type">
@@ -251,8 +461,8 @@
       </div>
     </div>
 
-    <div class="two">
-      <div class="card">
+    <div class="settings-sections">
+      <div class="card hidden" data-settings-pane="detection">
         <h2>AI detection</h2>
         <label>Confidence threshold: <b id="conf-val"></b></label>
         <input type="range" id="confidence" min="0.05" max="0.95" step="0.05" style="width:100%">
@@ -266,9 +476,7 @@
             Turn on <b>Custom objects</b> per camera.</p>
           <label>Object names (comma separated)</label><input type="text" id="custom_classes" placeholder="egg, crate, helmet">
           <label>Model</label><input type="text" id="custom_model">
-          <small><b>yolov8s-worldv2.pt</b> = no training, finds objects from their names (good to start).
-            For best accuracy, train on <b>Roboflow</b>: upload ~100–300 photos, label them, export as <b>YOLOv8</b>, train, and put the <b>.pt</b> file path here.
-            The object names above must match the trained class names.</small>
+          <small><b>yolov8s-worldv2.pt</b> finds objects by name. Use the <button class="btn" data-goto="training">AI Training</button> workspace to review photos, connect Roboflow, train and evaluate custom models. Activation fills in the model path and class names automatically. Custom models run on CPU; Hailo detection uses its separate .hef model.</small>
           <label>Confidence for custom objects: <b id="cconf-val"></b></label>
           <input type="range" id="custom_confidence" min="0.01" max="0.95" step="0.01" style="width:100%">
         </div>
@@ -278,8 +486,8 @@
           <label>Face detection</label><input type="text" id="m-faces">
         </details>
       </div>
-      <div>
-        <div class="card">
+      <div class="settings-sections">
+        <div class="card hidden" data-settings-pane="recording">
           <h2>Motion &amp; recording</h2>
           <label class="inline"><input type="checkbox" id="motion_enabled"> Motion events</label>
           <label>Trigger when this % of the picture changes (lower = more sensitive)</label>
@@ -287,14 +495,14 @@
           <label class="inline"><input type="checkbox" id="record_clips"> Record a video clip for every alert (not motion)</label>
           <label>Clip length (seconds, includes 3 s before the alert)</label><input type="number" id="clip_seconds" min="3" max="120">
         </div>
-        <div class="card">
+        <div class="card hidden" data-settings-pane="notifications">
           <h2>Telegram alerts <button class="btn" id="tg-test">Send test</button></h2>
           <small>Create a bot with @BotFather, then send it a message and get your chat ID from @userinfobot.</small>
           <label>Bot token <small id="tg-set"></small></label><input type="password" id="telegram_token" autocomplete="off" placeholder="leave blank to keep">
           <label>Chat ID</label><input type="text" id="telegram_chat_id">
           <small id="tg-out"></small>
         </div>
-        <div class="card">
+        <div class="card hidden" data-settings-pane="login">
           <h2>Login</h2>
           <label>Username</label><input type="text" id="username">
           <label>New password (leave blank to keep)</label><input type="password" id="password" autocomplete="new-password">
@@ -303,14 +511,34 @@
     </div>
     <div class="savebar"><button class="btn primary" id="save">Save settings</button><span id="save-msg" class="muted"></span></div>
   </section>
+  <section id="health" class="hidden"><div class="card"><h2>Camera connection health</h2><p class="hint">Live connection status, detection speed and the last frame received. Reconnection attempts are counted since the server started.</p><div class="table-scroll"><table><thead><tr><th>Camera</th><th>Group</th><th>Status</th><th>AI FPS</th><th>Last frame</th><th>Last connected</th><th>Reconnects</th></tr></thead><tbody id="health-rows"></tbody></table></div></div></section>
+  <section id="training" class="hidden">
+    <div class="training-intro card"><div><h2>Build a model for your cameras</h2><p class="hint">Collect → Review &amp; label → Train → Evaluate → Activate. Automatic collection suggests examples; only reviewed labels enter local training.</p></div><span class="pill">Local-first training</span></div>
+    <div class="seg training-tabs" aria-label="Training workspace"><button class="active" data-training="photos">1 · Photos &amp; labels</button><button data-training="datasets">2 · Datasets &amp; training</button><button data-training="models">3 · Models &amp; evaluation</button><button data-training="roboflow">Roboflow connection</button></div>
+    <div id="training-message" class="notice hidden" role="status"></div>
+    <div data-training-pane="photos">
+      <div class="card"><h2>Collect useful examples <span id="photo-summary" class="muted"></span></h2><div class="row training-controls"><select id="learn-camera" aria-label="Capture camera"></select><select id="capture-split" aria-label="Capture dataset split"><option value="train">Training session</option><option value="val">Validation session</option><option value="test">Test session</option></select><button class="btn primary" id="capture-photo">Capture photo</button><button class="btn" id="import-collected">Import collected photos</button><label class="btn file-button">Upload images<input id="upload-photos" type="file" accept="image/jpeg,image/png" multiple></label></div><p class="hint">Use different capture sessions for training and validation. Include lighting changes, backgrounds and difficult examples.</p>
+        <details class="auto-collection"><summary>Automatic collection of uncertain detections</summary><div class="row"><label class="inline"><input type="checkbox" id="auto-enabled">Enable for selected camera</label><label>Interval (seconds)<input type="number" id="auto-interval" min="10" max="3600" value="30"></label><label>Collect confidence up to<input type="number" id="auto-confidence" min="0.05" max="0.95" step="0.05" value="0.7"></label><button class="btn" id="save-auto">Save collection rule</button></div><p class="hint">Collects changing scenes with detections below this confidence and above your detection threshold. Suggestions still need your review. Images remain local until you upload them.</p></details>
+      </div>
+      <div class="row photo-toolbar"><select id="photo-filter" aria-label="Photo review filter"><option value="">All photos</option><option value="pending">Needs review</option><option value="reviewed">Reviewed</option></select><button class="btn" id="select-photos">Select visible</button><button class="btn" id="upload-selected">Upload selected to Roboflow</button><span id="selected-count" class="muted">0 selected</span><span class="spacer"></span><button class="btn" id="refresh-training">Refresh</button></div><div id="photo-grid" class="photo-grid"></div>
+      <div class="row pagination"><button class="btn" id="photos-prev">Previous</button><span id="photos-page" class="muted"></span><button class="btn" id="photos-next">Next</button></div>
+      <div id="label-editor" class="card hidden"><h2>Review photo <button class="btn" id="close-label-editor">Close editor</button></h2><div class="annotation-layout"><div><canvas id="label-canvas" aria-label="Draw a bounding box around each object" tabindex="0"></canvas><p class="hint">Drag to draw a box. Choose a class before drawing. Use Undo to remove the last box. You can also add a box using the coordinate fields.</p></div><div><label for="label-class">Object class</label><input type="text" id="label-class" placeholder="egg, defective_egg, package…" list="known-labels"><datalist id="known-labels"></datalist><div class="coordinate-fields"><label>Left %<input id="box-x1" type="number" min="0" max="100" value="10"></label><label>Top %<input id="box-y1" type="number" min="0" max="100" value="10"></label><label>Right %<input id="box-x2" type="number" min="0" max="100" value="90"></label><label>Bottom %<input id="box-y2" type="number" min="0" max="100" value="90"></label></div><div class="row"><button class="btn" id="add-label-box">Add box</button><button class="btn" id="undo-label-box">Undo</button><button class="btn" id="clear-label-boxes">Clear boxes</button></div><div id="label-box-list"></div><label for="label-split">Dataset split</label><select id="label-split"><option value="train">Training</option><option value="val">Validation</option><option value="test">Test</option></select><label class="inline"><input type="checkbox" id="label-reviewed">I checked every box and label (or this is an empty background)</label><button class="btn primary" id="save-labels">Save review</button><button class="btn danger" id="delete-photo">Delete photo</button></div></div></div>
+    </div>
+    <div data-training-pane="datasets" class="hidden"><div class="two"><div class="card"><h2>Versioned datasets</h2><div class="row"><button class="btn primary" id="build-dataset">Build from reviewed photos</button><label class="btn file-button">Import YOLO ZIP<input id="import-dataset" type="file" accept=".zip"></label></div><p class="hint">Each build is a snapshot. At least 2 training and 2 validation images are required; use a larger, varied dataset for meaningful results. Identical images across splits are rejected.</p><div id="dataset-list"></div></div><div class="card"><h2>Train a custom detector</h2><label for="train-dataset">Dataset</label><select id="train-dataset"></select><label for="train-name">Model name</label><input id="train-name" type="text" placeholder="Egg inspection v1"><label for="train-base">Starting model</label><select id="train-base"><option value="">YOLOv8 nano (installed base model)</option></select><div class="grid3"><label>Epochs<input id="train-epochs" type="number" min="1" max="300" value="30"></label><label>Image size<input id="train-size" type="number" min="160" max="1280" step="32" value="640"></label><label>Batch size<input id="train-batch" type="number" min="1" max="32" value="4"></label></div><label for="train-device">Training hardware</label><select id="train-device"><option value="cpu">CPU (works on this computer)</option><option value="0">NVIDIA GPU 0 (requires CUDA)</option></select><p class="hint">Training runs in a separate process and may reduce live detection speed. It creates a candidate model; activation is a separate step.</p><button class="btn primary" id="start-training">Start local training</button></div></div></div>
+    <div data-training-pane="models" class="hidden"><div class="card"><h2>Model library <label class="btn file-button">Import YOLO .pt<input id="import-model" type="file" accept=".pt"></label></h2><p class="hint">Compare models on the same validation dataset. Precision measures false alarms; recall measures missed objects. Higher scores are better, but small datasets can be misleading.</p><label for="evaluate-dataset">Comparison dataset</label><select id="evaluate-dataset"></select><label>Apply activated model to these cameras</label><div id="activation-cameras" class="row"></div><p class="hint">Activating changes the shared custom detector and enables it only on the selected cameras. Standard detection remains separate.</p><div id="model-list"></div><button class="btn" id="rollback-model">Restore previous model</button><p class="hint" id="active-model-label"></p></div></div>
+    <div data-training-pane="roboflow" class="hidden"><div class="two"><div class="card"><h2>Connect your Roboflow project</h2><label for="rf-workspace">Workspace slug</label><input type="text" id="rf-workspace" placeholder="my-workspace"><label for="rf-project">Project slug</label><input type="text" id="rf-project" placeholder="egg-detection"><label for="rf-key">Private API key <small id="rf-key-status"></small></label><input type="password" id="rf-key" autocomplete="new-password" placeholder="Enter key here; blank keeps the saved key"><p class="hint">The key is stored on this server and never returned to the browser. Photos are sent to Roboflow only when you choose Upload selected.</p><button class="btn primary" id="rf-connect">Save &amp; test connection</button><a class="btn hidden" id="rf-open" target="_blank" rel="noopener">Open project for labeling</a></div><div class="card"><h2>Download &amp; cloud training</h2><label for="rf-version">Dataset version</label><input type="number" id="rf-version" min="1" value="1"><button class="btn" id="rf-download-dataset">Download YOLO dataset</button><label for="rf-model">Model ID or version number</label><input type="text" id="rf-model" placeholder="1 or the model slug"><button class="btn" id="rf-download-model">Download model weights</button><p class="hint">Only compatible Ultralytics detection models can be activated here. Other Roboflow architectures need their own runtime.</p><details><summary>Train on Roboflow</summary><label for="rf-model-type">Roboflow model type identifier</label><input type="text" id="rf-model-type" placeholder="Model type supported by your project"><label for="rf-epochs">Epochs</label><input type="number" id="rf-epochs" min="1" max="300" value="30"><p class="hint">Generate a labeled dataset version in Roboflow first. Cloud training uses your Roboflow account credits.</p><button class="btn primary" id="rf-train">Submit cloud training</button><button class="btn" id="rf-status">Refresh cloud status</button><div id="rf-cloud-status" class="hint"></div></details></div></div></div>
+    <div class="card job-panel"><h2>Jobs &amp; progress</h2><div id="training-jobs"></div></div>
+  </section>
 </main>
 
-<div id="modal" class="hidden"><div id="modal-body"></div><div class="row"><span id="modal-cap" class="muted"></span><button class="btn" id="modal-close">Close</button></div></div>
+<div id="modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modal-cap"><div id="modal-body"></div><div class="row"><span id="modal-cap" class="muted"></span><button class="btn" id="modal-close">Close <small>Esc</small></button></div><div id="event-review" class="hidden"><select id="event-outcome" aria-label="Review outcome"><option value="confirmed">Confirmed event</option><option value="false_alarm">False alarm</option><option value="unreviewed">Needs review</option></select><input type="text" id="event-note" placeholder="Review note (optional)" aria-label="Review note"><button class="btn primary" id="save-event-review">Save review</button><span id="event-review-status" role="status"></span></div></div>
 
 <script>
 const $ = s => document.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const emptyState = (name, title, description) => `<div class="empty-state">${icon(name)}<strong>${esc(title)}</strong><p>${esc(description)}</p></div>`;
 const VEHICLES = ['car', 'motorcycle', 'bus', 'truck', 'bicycle'];
 const FEATURE_NAMES = { smooth_view: 'Smooth live view (boxes may lag on fast movement)', objects: 'Object detection + tracking', custom: 'Custom objects (e.g. egg)', trails: 'Tracking trails', pose: 'Pose + fall detection', faces: 'Face detection', blur_faces: 'Blur faces (privacy)', heatmap: 'Heatmap' };
 let S = null, ST = null, editIdx = 0;
@@ -326,91 +554,173 @@ const fmtTime = t => new Date(t * 1000).toLocaleString();
 const sum = o => Object.values(o || {}).reduce((a, b) => a + b, 0);
 
 // ---------- tabs ----------
+const PAGES = {
+  live: ['Live overview', 'Your cameras, activity, and alerts. All in one place.', 'MONITORING WORKSPACE'],
+  events: ['Event history', 'Review captured moments, alerts, and recordings.', 'ACTIVITY LOG'],
+  analytics: ['Analytics', 'A closer look at activity across your cameras today.', 'WORKSPACE INSIGHTS'],
+  settings: ['Workspace settings', 'Connect your cameras and fine-tune your detection.', 'CONFIGURATION'],
+  training: ['AI Training', 'Turn reviewed camera examples into a custom detector.', 'LEARNING WORKSPACE'],
+  health: ['Camera health', 'Connection and performance at a glance.', 'SYSTEM STATUS'],
+};
 function showTab(name) {
-  $$('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['live', 'events', 'analytics', 'settings'].forEach(t => $('#' + t).classList.toggle('hidden', t !== name));
-  if (name === 'events') loadEvents();
-  if (name === 'analytics') loadAnalytics();
-  if (name === 'settings') renderEditor();
+  if (!PAGES[name]) return;
+  $$('nav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === name);
+    if (b.dataset.tab === name) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+  Object.keys(PAGES).forEach(t => $('#' + t).classList.toggle('hidden', t !== name));
+  const [title, description, eyebrow] = PAGES[name];
+  $('#page-title').textContent = $('#breadcrumb-current').textContent = title;
+  $('#page-description').textContent = description;
+  $('#page-eyebrow').textContent = eyebrow;
+  $('#manage-cameras').classList.toggle('hidden', name === 'settings');
+  document.title = `${title} · AI Camera`;
+  if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+  if (S) {
+    if (name === 'events') loadEvents().catch(() => {
+      $('#ev-grid').innerHTML = emptyState('bell', 'Events unavailable', 'Check the connection, then select Refresh to try again.');
+    });
+    if (name === 'analytics') loadAnalytics().catch(() => {
+      $('#hour-chart').innerHTML = emptyState('chart', 'Analytics unavailable', 'Reconnect to the server and open Analytics again.');
+    });
+    if (name === 'settings') renderEditor();
+    if (name === 'training') window.loadTraining?.();
+    if (name === 'health') window.updateWorkspaceStatus?.(ST);
+  }
 }
 $$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$$('[data-settings]').forEach(b => b.onclick = () => {
+  $$('[data-settings]').forEach(x => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-selected', on); });
+  $$('[data-settings-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.settingsPane !== b.dataset.settings));
+});
 $$('[data-goto]').forEach(a => a.onclick = e => { e.preventDefault(); showTab(a.dataset.goto); });
-setInterval(() => $('#clock').textContent = new Date().toLocaleTimeString(), 1000);
+window.addEventListener('hashchange', () => { const name = location.hash.slice(1); if (PAGES[name]) showTab(name); });
+function updateClock() {
+  const now = new Date();
+  $('#clock').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  $('#date').textContent = now.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+}
+updateClock(); setInterval(updateClock, 1000);
 
 // ---------- modal ----------
+let modalTrigger = null;
+function showModal() {
+  modalTrigger = document.activeElement;
+  $('#modal').classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  $('#modal-close').focus();
+}
 function openEvent(e) {
+  window.openEventReview?.(e);
   $('#modal-body').innerHTML = e.clip
     ? `<video src="/events/${encodeURIComponent(e.clip)}" controls autoplay playsinline poster="/events/${encodeURIComponent(e.image)}"></video>`
     : `<img src="/events/${encodeURIComponent(e.image)}" alt="${esc(e.label)}">`;
   $('#modal-cap').textContent = `${e.type.toUpperCase()} · ${e.label} · ${e.camera} · ${fmtTime(e.time)}`;
-  $('#modal').classList.remove('hidden');
+  showModal();
 }
 // Live view: fetch one picture at a time (~12 fps) instead of an endless stream, so tiles never run out of
 // browser connections and go black. Pauses while the tab is hidden; keeps the last picture on errors.
 function startView(img, id) {
   img.dataset.live = '1';
+  const view = img.closest('.view');
+  const frameState = available => {
+    if (!view) return;
+    view.classList.toggle('frame-stale', !available);
+    if (available) view.classList.add('has-frame');
+    view.querySelector('.view-label').textContent = available ? 'LIVE' : 'UNAVAILABLE';
+    view.querySelector('.view-placeholder span').textContent = 'Waiting for camera connection';
+  };
   let prev = null;
   const loop = async () => {
     if (!img.isConnected) return prev && URL.revokeObjectURL(prev);
-    if (img.dataset.live !== '1' || document.hidden) return setTimeout(loop, 400);
+    if (img.dataset.live !== '1' || document.hidden || img.closest('.hidden')) return setTimeout(loop, 400);
     try {
       const r = await fetch(`/frame/${id}`, { cache: 'no-store' });
       if (!r.ok) throw new Error(r.status);
       const url = URL.createObjectURL(await r.blob());
-      await new Promise(ok => { img.onload = img.onerror = ok; img.src = url; });
+      const loaded = await new Promise(ok => { img.onload = () => ok(true); img.onerror = () => ok(false); img.src = url; });
       if (prev) URL.revokeObjectURL(prev);
       prev = url;
+      if (!loaded) throw new Error('Invalid camera frame');
+      frameState(true);
+      if (view && img.dataset.live !== '1') view.querySelector('.view-label').textContent = 'FROZEN';
       setTimeout(loop, 80);
-    } catch (e) { setTimeout(loop, 1000); }
+    } catch (e) { frameState(false); setTimeout(loop, 1000); }
   };
   loop();
 }
 
 function openLive(id, name) {
+  $('#event-review').classList.add('hidden');
   $('#modal-body').innerHTML = `<img alt="${esc(name)} live">`;
   startView($('#modal-body img'), id);
   $('#modal-cap').textContent = name;
-  $('#modal').classList.remove('hidden');
+  showModal();
 }
-$('#modal-close').onclick = () => { $('#modal').classList.add('hidden'); $('#modal-body').innerHTML = ''; };
+$('#modal-close').onclick = () => {
+  $('#modal').classList.add('hidden'); $('#modal-body').innerHTML = '';
+  document.body.classList.remove('modal-open');
+  if (modalTrigger && modalTrigger.isConnected) modalTrigger.focus();
+};
+$('#modal').addEventListener('click', e => { if (e.target === $('#modal')) $('#modal-close').click(); });
+document.addEventListener('keydown', e => {
+  if ($('#modal').classList.contains('hidden')) return;
+  if (e.key === 'Escape') $('#modal-close').click();
+  if (e.key === 'Tab') {
+    const focusable = $$('button, video[controls], input, select', $('#modal')).filter(el => !el.closest('.hidden'));
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
 
 // ---------- live ----------
 $('#cols').onchange = e => { $('#grid').style.setProperty('--cols', e.target.value); try { localStorage.cols = e.target.value; } catch (_) {} };
-try { if (localStorage.cols) { $('#cols').value = localStorage.cols; $('#grid').style.setProperty('--cols', localStorage.cols); } } catch (_) {}
+try { if (['1', '2', '3', '4'].includes(localStorage.cols)) { $('#cols').value = localStorage.cols; $('#grid').style.setProperty('--cols', localStorage.cols); } } catch (_) {}
 
 function renderGrid() {
   const cams = S.cameras.filter(c => c.enabled);
-  $('#grid').innerHTML = cams.length ? cams.map(c => `
+  $('#camera-count').textContent = $('#nav-camera-count').textContent = cams.length;
+  $('#grid').innerHTML = cams.length ? cams.map((c, i) => `
     <div class="tile" id="t-${c.id}">
-      <div class="tile-head"><span class="dot"></span><b>${esc(c.name)} ${c.location ? `<small>· ${esc(c.location)}</small>` : ''}</b><span class="badges row"></span><small class="fps"></small></div>
-      <div class="view"><img alt="${esc(c.name)} live view"><span class="rec hidden">● REC</span></div>
+      <div class="tile-head"><span class="camera-number">${String(i + 1).padStart(2, '0')}</span><div class="tile-title"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.location || 'Camera feed')}</small></div><span class="camera-signal"><span class="dot"></span><span class="fps">Connecting</span></span></div>
+      <div class="view"><div class="view-placeholder">${icon('camera')}<span>Connecting to camera…</span></div><img alt="${esc(c.name)} live view"><span class="view-label">CONNECTING</span><span class="rec hidden">● REC</span></div>
+      <div class="badges row"></div>
       <div class="tile-foot counts"></div>
-      <div class="tile-foot" style="padding-top:0">
-        <button class="btn" data-full>Full screen</button><a class="btn" href="/snapshot/${c.id}">Snapshot</a>
-        <button class="btn" data-rec>Record clip</button>
-        <button class="btn" data-pause title="Stop AI detection and alerts on this camera; video keeps playing">⏸ Pause AI</button>
-        <button class="btn" data-freeze title="Hold the current picture on screen">❚❚ Freeze view</button></div>
-    </div>`).join('') : '<div class="card muted">No cameras enabled. Add one in Settings.</div>';
+      <div class="tile-actions">
+        <button class="btn" data-full title="Expand camera view">${icon('expand')}Expand</button><a class="btn" href="/snapshot/${c.id}" title="Download snapshot">${icon('photo')}Snapshot</a>
+        <button class="btn" data-rec title="Record a clip">${icon('record')}Record</button>
+        <button class="btn" data-pause aria-pressed="false" title="Stop AI detection and alerts on this camera; video keeps playing">Pause AI</button>
+        <button class="btn" data-freeze aria-pressed="false" title="Hold the current picture on screen">Freeze</button></div>
+    </div>`).join('') : `<div class="card empty-state">${icon('camera')}<strong>Your workspace is ready</strong><p>Connect a camera in Settings to start monitoring your space.</p><button class="btn primary" id="setup-camera">Set up a camera</button></div>`;
+  if ($('#setup-camera')) $('#setup-camera').onclick = () => showTab('settings');
   cams.forEach(c => {
     const t = $('#t-' + c.id);
     startView(t.querySelector('.view img'), c.id);
     t.querySelector('[data-full]').onclick = () => openLive(c.id, c.name);
     t.querySelector('[data-pause]').onclick = async () => {
       const live = ST && ST.cameras.find(x => x.id === c.id);
-      await api('/api/pause/' + c.id, { json: { paused: !(live && live.paused) } }); pollStatus();
+      try { await api('/api/pause/' + c.id, { json: { paused: !(live && live.paused) } }); pollStatus(); }
+      catch (err) { alert(err.message); }
     };
     t.querySelector('[data-freeze]').onclick = e => {
-      const img = t.querySelector('.view img'), frozen = e.target.classList.toggle('on');
+      const button = e.currentTarget, img = t.querySelector('.view img'), frozen = button.classList.toggle('on');
       img.dataset.live = frozen ? '0' : '1';
-      e.target.textContent = frozen ? '▶ Live view' : '❚❚ Freeze view';
+      button.textContent = frozen ? 'Unfreeze' : 'Freeze';
+      button.setAttribute('aria-pressed', String(frozen));
+      t.querySelector('.view').classList.toggle('frozen', frozen);
+      t.querySelector('.view-label').textContent = frozen ? 'FROZEN' : 'CONNECTING';
     };
     t.querySelector('[data-rec]').onclick = async e => {
-      try { await api('/api/record/' + c.id, { method: 'POST' }); e.target.textContent = 'Recording…'; }
+      const button = e.currentTarget;
+      try { await api('/api/record/' + c.id, { method: 'POST' }); button.textContent = 'Recording…'; }
       catch (err) { alert(err.message); }
-      setTimeout(() => e.target.textContent = 'Record clip', 3000);
+      setTimeout(() => button.innerHTML = icon('record') + 'Record', 3000);
     };
   });
   $('#f-cam').innerHTML = '<option value="">All cameras</option>' + S.cameras.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  window.decorateCameras?.();
 }
 
 function setHTML(el, html) { if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; } }
@@ -419,7 +729,15 @@ const chips = counts => Object.entries(counts).sort((a, b) => b[1] - a[1])
   .map(([k, v]) => `<span class="chip ${S.alert_classes.includes(k) ? 'alert' : ''}">${esc(k)} ${v}</span>`).join('');
 
 async function pollStatus() {
-  try { ST = await api('/api/status'); } catch (e) { $('#ai').className = 'pill bad'; $('#ai').textContent = 'Server unreachable'; return; }
+  try { ST = await api('/api/status'); } catch (e) {
+    $('#ai').className = 'pill bad'; $('#ai').textContent = 'Server unreachable';
+    $('#connection-message').textContent = 'Connection lost. Displayed counts may be out of date. Reconnecting automatically…';
+    $('#connection-error').classList.remove('hidden');
+    $('#pause-all').disabled = true;
+    $('#online-note').textContent = 'Camera status unavailable';
+    return;
+  }
+  $('#connection-error').classList.add('hidden');
   $('#ai').className = 'pill ' + (ST.ai_ok ? 'ok' : 'bad');
   $('#ai').textContent = ST.ai_ok ? `AI · ${ST.ai_backend} running` : 'AI off';
   $('#ai').title = ST.ai_error;
@@ -433,7 +751,8 @@ async function pollStatus() {
     t.querySelector('.rec').classList.toggle('hidden', !c.recording);
     const ins = c.inspection;
     const pb = t.querySelector('[data-pause]');
-    pb.textContent = c.paused ? '▶ Resume AI' : '⏸ Pause AI'; pb.classList.toggle('on', c.paused);
+    pb.textContent = c.paused ? 'Resume AI' : 'Pause AI'; pb.classList.toggle('on', c.paused);
+    pb.setAttribute('aria-pressed', String(c.paused));
     setHTML(t.querySelector('.badges'), (c.paused ? '<span class="chip paused">AI PAUSED</span>' : '') +
       (c.motion ? '<span class="chip motion">MOTION</span>' : '') +
       (ins.enabled ? `<span class="chip insp ${ins.severity || ''}">Inspect: ${ins.score != null ? ins.severity.toUpperCase() + ' ' + ins.score.toFixed(2) : esc(ins.state)}</span>` : '') +
@@ -444,45 +763,61 @@ async function pollStatus() {
   if (!$('#settings').classList.contains('hidden')) updateInspectionState();
   const st = ST.stats;
   $('#k-online').textContent = `${ST.cameras.filter(c => c.online).length} / ${ST.cameras.length}`;
+  const online = ST.cameras.filter(c => c.online).length;
+  $('#online-note').textContent = !ST.cameras.length ? 'No cameras enabled' : online === ST.cameras.length ? 'All cameras connected' : `${ST.cameras.length - online} camera${ST.cameras.length - online === 1 ? '' : 's'} offline`;
+  $('#last-sync').innerHTML = icon('pulse') + 'Last synced ' + new Date().toLocaleTimeString([], { hour12: false });
   $('#k-now').textContent = sum(total);
   $('#k-people').textContent = st.unique.person || 0;
   $('#k-vehicles').textContent = VEHICLES.reduce((a, k) => a + (st.unique[k] || 0), 0);
   $('#k-alerts').textContent = Object.entries(st.kinds).filter(([k]) => k !== 'motion').reduce((a, [, v]) => a + v, 0);
-  setHTML($('#totals'), chips(total));
+  setHTML($('#totals'), chips(total) || '<span>No objects detected</span>');
   const allPaused = ST.cameras.length && ST.cameras.every(c => c.paused);
-  $('#pause-all').textContent = allPaused ? '▶ Resume all AI' : '⏸ Pause all AI';
+  $('#pause-all').disabled = !ST.cameras.length;
+  $('#pause-all').textContent = allPaused ? 'Resume all AI' : 'Pause all AI';
   $('#pause-all').classList.toggle('on', !!allPaused);
+  $('#pause-all').setAttribute('aria-pressed', String(!!allPaused));
+  window.updateWorkspaceStatus?.(ST);
 }
 $('#pause-all').onclick = async () => {
+  if (!ST || !ST.cameras.length) return;
   const pause = !ST.cameras.every(c => c.paused);
-  await Promise.all(ST.cameras.map(c => api('/api/pause/' + c.id, { json: { paused: pause } })));
+  $('#pause-all').disabled = true;
+  try { await Promise.all(ST.cameras.map(c => api('/api/pause/' + c.id, { json: { paused: pause } }))); }
+  catch (err) { alert(err.message); }
   pollStatus();
 };
 
 async function pollFeed() {
   try {
     const ev = (await api('/api/events?limit=40')).filter(e => e.type !== 'motion').slice(0, 15);
+    $('#feed-count').textContent = ev.length;
     setHTML($('#feed'), ev.length ? ev.map((e, i) => `
-      <div class="ev-row" data-i="${i}"><img loading="lazy" src="/events/${encodeURIComponent(e.image)}" alt="">
-        <div><span class="type ${e.type}">${e.type}</span> ${e.clip ? '▶' : ''}<div>${esc(e.label)}</div><small>${esc(e.camera)} · ${new Date(e.time * 1000).toLocaleTimeString()}</small></div></div>`).join('')
-      : '<small>No alerts yet</small>');
+      <button class="ev-row" data-i="${i}" title="${esc(e.label)}"><img loading="lazy" src="/events/${encodeURIComponent(e.image)}" alt="">
+        <span class="event-copy"><span class="type ${esc(e.type)}">${esc(e.type)}</span> ${e.clip ? '▶' : ''}<span class="event-label">${esc(e.label)}</span><small>${esc(e.camera)} · ${new Date(e.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></span></button>`).join('')
+      : emptyState('shield', 'No alerts yet', 'New camera alerts will appear here as they happen.'));
     $$('#feed .ev-row').forEach(r => r.onclick = () => openEvent(ev[r.dataset.i]));
-  } catch (e) {}
+  } catch (e) {
+    $('#feed-count').textContent = '–';
+    setHTML($('#feed'), emptyState('bell', 'Activity unavailable', 'Waiting for the server. Activity refreshes automatically.'));
+  }
 }
 
 // ---------- events ----------
 async function loadEvents() {
   const q = new URLSearchParams({ limit: 200, camera: $('#f-cam').value, type: $('#f-type').value });
+  q.set('severity', $('#f-severity').value); q.set('review', $('#f-review').value);
+  if ($('#f-from').value) q.set('after', new Date($('#f-from').value + 'T00:00:00').getTime()/1000);
+  if ($('#f-to').value) { const end = new Date($('#f-to').value + 'T00:00:00'); end.setDate(end.getDate()+1); q.set('before', end.getTime()/1000); }
   const ev = await api('/api/events?' + q);
   $('#ev-grid').innerHTML = ev.length ? ev.map((e, i) => `
-    <div class="ev-card" data-i="${i}"><img loading="lazy" src="/events/${encodeURIComponent(e.image)}" alt="${esc(e.label)}">
-      <div><span class="type ${e.type}">${e.type}</span> ${e.clip ? '<span class="chip">▶ clip</span>' : ''}
-        <div><b>${esc(e.label)}</b></div><small>${esc(e.camera)} · ${fmtTime(e.time)}</small></div></div>`).join('')
-    : '<small>No events match.</small>';
+    <button class="ev-card" data-i="${i}"><img loading="lazy" src="/events/${encodeURIComponent(e.image)}" alt="${esc(e.label)}">
+      <div><span class="type ${esc(e.type)}">${esc(e.type)}</span> ${e.clip ? '<span class="chip">▶ clip</span>' : ''}<span class="chip">${esc(e.severity || 'low')}</span><span class="chip ${e.reviewed ? 'reviewed' : ''}">${e.reviewed ? 'Reviewed' : 'Needs review'}</span>
+        <div><b>${esc(e.label)}</b></div><small>${esc(e.camera)} · ${fmtTime(e.time)}</small></div></button>`).join('')
+    : emptyState('bell', 'No matching events', 'Try a different camera or event type, or check back after new activity.');
   $$('#ev-grid .ev-card').forEach(c => c.onclick = () => openEvent(ev[c.dataset.i]));
 }
 $('#f-cam').onchange = $('#f-type').onchange = $('#refresh').onclick = loadEvents;
-$('#clear').onclick = async () => {
+$('#clear').onclick = $('#feed-clear').onclick = async () => {
   if (!confirm('Delete ALL events, snapshots and clips?')) return;
   await api('/api/events', { method: 'DELETE' }); loadEvents(); pollFeed();
 };
@@ -552,7 +887,7 @@ function renderEditor() {
   if (!cam()) return;
   const c = cam();
   c.conn = c.conn && c.conn.type ? c.conn : guessConn(c.source);
-  $('#c-name').value = c.name; $('#c-location').value = c.location || ''; $('#c-enabled').checked = c.enabled;
+  $('#c-name').value = c.name; $('#c-location').value = c.location || ''; $('#c-group').value = c.group || ''; $('#c-enabled').checked = c.enabled;
   $$('.conn [data-k]').forEach(i => i.value = c.conn[i.dataset.k] ?? '');
   $('#c-test-out').textContent = ''; $('#scan-out').innerHTML = '';
   renderConn();
@@ -569,6 +904,7 @@ function renderEditor() {
 }
 $('#c-name').oninput = e => { cam().name = e.target.value; renderCamList(); };
 $('#c-location').oninput = e => cam().location = e.target.value;
+$('#c-group').oninput = e => cam().group = e.target.value;
 $('#c-enabled').onchange = e => { cam().enabled = e.target.checked; renderCamList(); };
 $('#add-cam').onclick = () => {
   S.cameras.push({ id: '', name: `Camera ${S.cameras.length + 1}`, location: '', source: '', enabled: true,
@@ -850,24 +1186,45 @@ $('#save').onclick = async () => {
     telegram_token: $('#telegram_token').value, telegram_chat_id: $('#telegram_chat_id').value,
     username: $('#username').value, password: $('#password').value,
   };
+  // backend drops cameras with an empty source (clean_settings); warn instead of silently reporting success
+  const dropped = body.cameras.filter(c => !String(c.source || '').trim()).map(c => c.name || 'Camera');
   $('#save-msg').textContent = 'Saving…';
   try {
     S = await api('/api/settings', { json: body });
     editIdx = Math.min(editIdx, Math.max(0, S.cameras.length - 1));
     renderGrid(); renderGlobal(); renderEditor();
-    $('#save-msg').textContent = '✔ Saved and applied.' + (body.password ? ' Log in again with the new password.' : '');
+    $('#save-msg').textContent = (dropped.length
+      ? `⚠ Saved, but not saved (no source — fill in the IP/connection details): ${dropped.join(', ')}.`
+      : '✔ Saved and applied.') + (body.password ? ' Log in again with the new password.' : '');
   } catch (e) { $('#save-msg').textContent = '✖ ' + e.message; }
 };
 
-(async () => {
-  S = await api('/api/settings');
-  renderGrid(); renderGlobal();
-  const tab = location.hash.slice(1);  // e.g. /#settings opens that tab directly
-  if (['events', 'analytics', 'settings'].includes(tab)) showTab(tab);
-  pollStatus(); pollFeed();
-  setInterval(pollStatus, 1000);
-  setInterval(pollFeed, 3000);
-})();
+let dashboardStarted = false;
+async function initializeDashboard() {
+  $('#retry-connection').disabled = true;
+  try {
+    if (!S) {
+      S = await api('/api/settings');
+      renderGrid(); renderGlobal();
+      const tab = location.hash.slice(1);
+      showTab(PAGES[tab] ? tab : 'live');
+    }
+    await Promise.all([pollStatus(), pollFeed()]);
+    if (!dashboardStarted) {
+      setInterval(pollStatus, 1000);
+      setInterval(pollFeed, 3000);
+      dashboardStarted = true;
+    }
+  } catch (err) {
+    $('#ai').className = 'pill bad';
+    $('#ai').textContent = 'Connection unavailable';
+    $('#connection-message').textContent = 'Unable to load the workspace. Check that the server is running, then retry.';
+    $('#connection-error').classList.remove('hidden');
+  } finally { $('#retry-connection').disabled = false; }
+}
+$('#retry-connection').onclick = initializeDashboard;
+initializeDashboard();
 </script>
+<script src="/workspace/workspace.js"></script>
 </body>
 </html>

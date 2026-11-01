@@ -1,0 +1,92 @@
+/* Scoped extensions for monitoring and training. */
+body .camera-filters { margin:0 0 15px; }
+body input[type=search], body input[type=date] { background:var(--panel); border:1px solid var(--line); color:var(--text); border-radius:7px; padding:9px 11px; min-width:0; font:inherit; }
+.camera-filters input { flex:1; width:160px; }
+body .grid.focus-mode { grid-template-columns:minmax(0,3fr) minmax(150px,1fr) !important; align-items:start; }
+.grid.focus-mode .tile { grid-column:2; }
+.grid.focus-mode .tile.focused-camera { grid-column:1; grid-row:1 / span 20; }
+.grid.focus-mode .tile:not(.focused-camera) .tile-actions .btn:not([data-focus]), .grid.focus-mode .tile:not(.focused-camera) .counts, .grid.focus-mode .tile:not(.focused-camera) .badges, .grid.focus-mode .tile:not(.focused-camera) .camera-number { display:none; }
+.grid.focus-mode .tile:not(.focused-camera) .tile-head { padding:8px; min-height:44px; }
+.grid.focus-mode .tile:not(.focused-camera) .camera-signal { display:none; }
+body .event-filters { margin-bottom:16px; }
+.event-filters label { display:flex; align-items:center; gap:8px; margin:0; }
+.event-filters input { max-width:155px; }
+.chip.reviewed { background:#193c32; color:#91e8ce; }
+#event-review { max-width:900px; width:100%; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+#event-review input { flex:1; min-width:150px; }
+#event-review-status { width:100%; font-size:12px; color:var(--accent); }
+body #modal-body img, body #modal-body video { max-height:67vh; }
+.settings-tabs, .training-tabs { margin-bottom:20px; }
+.settings-sections { display:contents; }
+.table-scroll { overflow-x:auto; margin-top:20px; }
+.table-scroll td { white-space:nowrap; padding:14px 10px; font-size:12px; }
+.table-scroll th { padding:10px; }
+.training-intro { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.training-intro .hint { max-width:700px; }
+.notice { padding:13px 16px; border:1px solid #346859; background:#162e27; color:#bcf5e3; border-radius:8px; margin-bottom:18px; font-size:12px; overflow-wrap:anywhere; }
+.notice.error { background:#342029; color:#ffbdc5; border-color:#61333c; }
+.training-controls { gap:10px; }
+.file-button { position:relative; overflow:hidden; margin:0; }
+.file-button input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
+.file-button:focus-within { outline:2px solid var(--accent); outline-offset:3px; }
+.auto-collection { margin-top:20px; padding-top:15px; border-top:1px solid var(--line); }
+summary { cursor:pointer; color:var(--muted); }
+.auto-collection .row { align-items:end; gap:16px; }
+.auto-collection input[type=number] { max-width:160px; display:block; }
+.photo-toolbar { margin:0 0 15px; }
+.photo-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:14px; }
+.photo-card { position:relative; border:1px solid var(--line); border-radius:9px; background:var(--panel); overflow:hidden; }
+.photo-select { position:absolute; top:8px; left:8px; margin:0; z-index:1; background:#0c1117aa; border-radius:5px; padding:5px; }
+.photo-select input { width:18px; height:18px; margin:0; vertical-align:middle; }
+.photo-open { border:0; padding:0; width:100%; text-align:left; background:none; color:var(--text); cursor:pointer; }
+.photo-open img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; background:#080d12; }
+.photo-copy { display:block; padding:12px; }
+.photo-copy b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; font-weight:500; }
+.photo-copy small { display:block; margin:5px 0 9px; font-size:11px; }
+.pagination { justify-content:center; margin:18px 0 24px; }
+.annotation-layout { display:grid; grid-template-columns:minmax(0,2fr) minmax(230px,1fr); gap:24px; }
+.annotation-layout > * { min-width:0; }
+#label-canvas { display:block; width:100%; background:#080d12; border:1px solid var(--line); border-radius:8px; touch-action:none; cursor:crosshair; }
+.coordinate-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.label-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:7px 0; font-size:12px; }
+#label-box-list { max-height:240px; overflow:auto; margin:15px 0; }
+#label-split, #train-dataset, #train-base, #train-device, #evaluate-dataset { width:100%; }
+#save-labels { margin:15px 4px 0 0; }
+.dataset-row { display:flex; align-items:center; gap:16px; justify-content:space-between; border-top:1px solid var(--line); padding:15px 0; margin-top:12px; }
+.dataset-row > div { min-width:0; }
+.dataset-row b, .dataset-row small { display:block; overflow-wrap:anywhere; }
+.dataset-row small { font-size:11px; margin-top:5px; }
+.dataset-row .btn { flex:none; }
+.model-card { padding:20px 0; border-top:1px solid var(--line); margin-top:15px; }
+.model-card h3 { margin:0; font-size:14px; font-weight:600; }
+.model-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.model-metrics span { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px; color:var(--muted); font-size:10px; }
+.model-metrics b { display:block; font-size:22px; color:var(--text); margin-top:5px; font-weight:550; }
+.job-panel { margin-top:24px; }
+.job-row { margin:15px 0; padding:15px; background:var(--bg); border:1px solid var(--line); border-radius:8px; }
+.job-row b { font-size:12px; }
+.job-row progress { width:100%; height:6px; accent-color:var(--accent); margin-top:12px; }
+.job-row .hint { overflow-wrap:anywhere; }
+#rf-cloud-status { white-space:pre-wrap; }
+#rf-open { margin-top:10px; }
+#rf-download-model, #rf-download-dataset, #start-training { margin-top:12px; }
+#active-model-label { overflow-wrap:anywhere; }
+@media(max-width:1000px) { .annotation-layout { grid-template-columns:1fr; } }
+@media(max-width:700px) {
+  body nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+  body nav button { justify-content:flex-start; padding:9px; }
+  body nav .nav-text { white-space:nowrap; font-size:10px; }
+  .training-intro { flex-direction:column; align-items:flex-start; }
+  .training-tabs button { flex:1 1 40%; }
+  body .grid.focus-mode { grid-template-columns:minmax(0,1fr) !important; }
+  .grid.focus-mode .tile, .grid.focus-mode .tile.focused-camera { grid-column:1; grid-row:auto; }
+  .model-metrics { grid-template-columns:1fr 1fr; }
+  .photo-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .photo-copy { padding:9px; }
+  .event-filters label { width:100%; justify-content:space-between; }
+  .event-filters input { max-width:none; flex:1; }
+  .dataset-row { flex-wrap:wrap; }
+  #training .card { padding:15px; }
+  .training-controls > select { max-width:100%; }
+  .camera-filters #camera-group { max-width:140px; }
+}

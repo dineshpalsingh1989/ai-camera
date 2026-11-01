@@ -22,6 +22,8 @@ s = app.clean_settings({"confidence": 5, "cameras": [{"source": "0", "zones": [{
 assert s["confidence"] == 0.95 and s["cameras"][0]["zones"][0]["points"][1] == [1, 0]
 s = app.clean_settings({"cameras": [{"source": "0", "conn": {"type": "usb", "usb": "0", "evil": "x"}}]})
 assert s["cameras"][0]["conn"] == {"type": "usb", "usb": "0"}
+s = app.clean_settings({"cameras": [{"source": "0"}, {"source": "  ", "name": "No IP"}]})
+assert len(s["cameras"]) == 1  # source-less camera is dropped (frontend warns the user)
 try:
     app.clean_settings({"cameras": [{"source": "0", "lines": [{"points": [[0, 0]]}]}]})
     raise AssertionError("one-point line accepted")

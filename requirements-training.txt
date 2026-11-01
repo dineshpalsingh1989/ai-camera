@@ -1,0 +1,5 @@
+# Optional training features; inference-only Hailo installations do not need PyTorch.
+PyYAML>=6.0,<7
+ultralytics>=8.3,<9
+torch>=2.2
+torchvision>=0.17
