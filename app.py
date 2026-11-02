@@ -4,7 +4,7 @@
 Object detection + tracking, zones (intrusion / loitering), line counters, pose + fall detection,
 face detection / privacy blur, heatmap, motion, event snapshots + video clips, Telegram alerts, analytics.
 """
-import glob, hmac, io, json, os, re, shutil, socket, subprocess, sys, threading, time, uuid, zipfile
+import atexit, glob, hmac, io, json, os, re, shutil, socket, subprocess, sys, threading, time, uuid, zipfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -13,6 +13,8 @@ import cv2
 import numpy as np
 import requests
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
+
+import hardware  # IRIV EdgeAI CM5 peripherals; no-op on any other machine
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(BASE, "settings.json")
@@ -580,6 +582,7 @@ def add_event(cam, kind, label, jpg, force=False):
     bump("kinds", kind)
     if kind not in QUIET:
         notify(f"{cam.name}: {label}", jpg)
+        peripherals.on_alert(label)  # buzzer + siren/relay on the IRIV board; no-op elsewhere
         if settings["record_clips"] and cam.clip is None and shutil.disk_usage(EVENTS_DIR).free > 1 << 30:
             cam.start_clip(base, ev)
 
@@ -938,6 +941,7 @@ class Camera:
 
 settings = load_settings()
 ai, ai_error, cameras = None, "", {}
+peripherals = hardware.Peripherals(False)  # real board peripherals attached at startup (see __main__)
 
 
 def start_ai():
@@ -1269,6 +1273,9 @@ if __name__ == "__main__" and sys.argv[1:2] == ["--probe"]:
     probe(sys.argv[2])
 elif __name__ == "__main__":
     start_ai()
+    peripherals = hardware.Peripherals(ai is not None and getattr(ai, "label", "") == "Hailo")
+    atexit.register(peripherals.cleanup)
+    threading.Thread(target=hardware.status_loop, args=(peripherals, cameras), daemon=True).start()
     sync_cameras()
     threading.Thread(target=stats_saver, daemon=True).start()
     app.run(host="0.0.0.0", port=8080, threaded=True)

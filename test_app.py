@@ -30,7 +30,8 @@ try:
 except ValueError:
     pass
 assert app.clean_inspection({"votes": 9, "window": 3}, app.COCO)["votes"] == 3  # can't need more votes than frames
-s = app.clean_settings({"custom_classes": ["Egg", "egg", " "], "alert_classes": ["egg", "unicorn"],
+s = app.clean_settings({"custom_model": "yolov8s-worldv2.pt",  # a "world" model lowercases class names
+                        "custom_classes": ["Egg", "egg", " "], "alert_classes": ["egg", "unicorn"],
                         "cameras": [{"source": "0", "inspection": {"target": "egg"}}]})
 assert s["custom_classes"] == ["egg"] and s["alert_classes"] == ["egg"] and s["cameras"][0]["inspection"]["target"] == "egg"
 
@@ -45,4 +46,12 @@ try:
     print(f"anomaly check: good {ok_score:.2f} vs defect {bad_score:.2f}")
 except ImportError:
     print("anomaly check skipped (no PyTorch)")
+# IRIV board peripherals: disabled off-board (no Hailo, or not a CM5), and every method is a safe no-op
+import hardware
+assert hardware.board_present(False) is False          # no Hailo HAT -> off
+assert hardware.board_present(True) is False            # this dev machine is not a CM5 -> off
+p = hardware.Peripherals(False)
+assert p.enabled is False
+p.on_alert("test"); p.set_health(True); p.update_status(["x"]); p.cleanup()  # must not raise when disabled
+
 print("all checks passed")

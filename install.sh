@@ -8,6 +8,10 @@ sudo apt-get install -y python3-opencv python3-flask python3-requests python3-nu
 
 python3 -c "import hailo_platform" 2>/dev/null \
   || echo "WARNING: HailoRT not found (Raspberry Pi: sudo apt install hailo-all). Video works, AI stays off."
+
+# IRIV EdgeAI CM5 board peripherals (OLED, buzzer, siren/relay outputs). Optional: the app no-ops without them.
+pip3 install --break-system-packages gpiozero lgpio luma.oled 2>/dev/null \
+  || echo "NOTE: gpiozero/luma.oled not installed - IRIV board peripherals stay off. App and demo run fine without them."
 [ -f /usr/local/hailo/resources/models/hailo8l/yolov8s.hef ] \
   || echo "WARNING: Hailo models not in /usr/local/hailo/resources/models/hailo8l/ - set paths in Settings > Model files."
 
