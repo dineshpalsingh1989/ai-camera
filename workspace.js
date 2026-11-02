@@ -141,7 +141,8 @@
     $('#known-labels').innerHTML = [...new Set([...(S?.custom_classes||[]), ...training.photos.flatMap(p=>p.boxes.map(b=>b.label))])].map(n=>`<option value="${esc(n)}">`).join('');
     const version = JSON.stringify(training.photos.map(p=>[p.id,p.reviewed,p.split,p.boxes,p.uploads]));
     if (force || photoVersion !== version) { photoVersion = version; renderPhotos(); }
-    setHTML($('#dataset-list'), training.datasets.map(d=>`<div class="dataset-row"><div><b>${esc(d.name)}</b><small>${esc(d.classes.join(', '))}<br>${d.counts.train||0} train · ${d.counts.val||0} validation · ${d.counts.test||0} test</small></div><a class="btn" href="${endpoint}/datasets/${d.id}/download">Download ZIP</a></div>`).join('') || '<p class="hint">No datasets yet. Review photos or import a labeled YOLO dataset.</p>');
+    setHTML($('#dataset-list'), training.datasets.map(d=>`<div class="dataset-row"><div><b>${esc(d.name)}</b><small>${esc(d.classes.join(', '))}<br>${d.counts.train||0} train · ${d.counts.val||0} validation · ${d.counts.test||0} test</small></div><a class="btn" href="${endpoint}/datasets/${d.id}/download">Download ZIP</a><button class="btn danger" data-delete-dataset="${d.id}">Delete</button></div>`).join('') || '<p class="hint">No datasets yet. Review photos or import a labeled YOLO dataset.</p>');
+    $$('[data-delete-dataset]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this dataset snapshot? Trained models keep working; this only removes the snapshot.'))return;b.disabled=true;try{await api(endpoint+'/datasets/'+b.dataset.deleteDataset,{method:'DELETE'});message('Dataset deleted.');await loadTraining();}catch(err){message(err.message,true);b.disabled=false;}});
     renderModels(); renderJobs();
   }
   function visiblePhotos() {

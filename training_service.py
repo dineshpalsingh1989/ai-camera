@@ -451,6 +451,16 @@ class TrainingService:
             self.save()
         self.path(model['file']).unlink(missing_ok=True)
         return {'ok': True}
+
+    def delete_dataset(self, did):
+        self.item('datasets', did)  # 404 if unknown
+        with self.lock:
+            self.state['datasets'].pop(did, None)
+            self.save()
+        shutil.rmtree(self.path('datasets/' + did), ignore_errors=True)  # snapshot is immutable; safe to drop
+        for z in (self.path('downloads/' + did + '.zip'), self.path('downloads/' + did + '-export.zip')):
+            z.unlink(missing_ok=True)
+        return {'ok': True}
         return {'ok': True}
 
     def rf(self, suffix='', method='GET', params=None, **kwargs):
@@ -682,6 +692,10 @@ def register_training(app, context, root=None):
                 archive.unlink(missing_ok=True)
             return jsonify(result)
         return jsonify(service.build_dataset((request.get_json(silent=True) or {}).get('photos')))
+
+    @bp.delete('/datasets/<did>')
+    def delete_dataset(did):
+        return jsonify(service.delete_dataset(did))
 
     @bp.get('/datasets/<did>/download')
     def download_dataset(did):
