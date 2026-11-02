@@ -1114,6 +1114,15 @@ def pause(cid):
     return jsonify(paused=cam.paused)
 
 
+def active_model_name():
+    """Friendly name of the active custom detector, or '' when it's the base/no custom model."""
+    base = os.path.basename(str(settings.get("custom_model", "")).replace("\\", "/"))
+    for m in training_service.state.get("models", {}).values():
+        if os.path.basename(m["file"]) == base:
+            return m["name"]
+    return ""
+
+
 @app.route("/api/hardware")
 def api_hardware():
     return jsonify(hardware.info(peripherals))
@@ -1130,7 +1139,8 @@ def api_hardware_output():
 def status():
     with stats_lock:
         st = json.loads(json.dumps(stats))
-    return jsonify(ai_ok=ai is not None, ai_backend=ai.label if ai else "", ai_error=ai_error, stats=st, cameras=[
+    return jsonify(ai_ok=ai is not None, ai_backend=ai.label if ai else "", ai_error=ai_error, stats=st,
+                   custom_model=active_model_name(), custom_classes=settings["custom_classes"], cameras=[
         {"id": c.id, "name": c.name, "online": c.online, "fps": round(c.fps, 1), "motion": c.motion,
          "group": c.cfg.get("group", ""), "last_frame": c.last_frame, "last_connected": c.last_connected,
          "reconnects": c.reconnects,

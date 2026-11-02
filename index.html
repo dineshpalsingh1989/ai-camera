@@ -341,7 +341,7 @@
       </div>
       <aside class="card activity-panel"><div class="activity-heading"><h2>Recent activity <span class="count-label" id="feed-count">–</span></h2><p>Latest alerts from your cameras</p><button class="btn danger" id="feed-clear" type="button">Clear</button></div><div id="feed" class="feed"><div class="empty-state"><p>Loading recent activity…</p></div></div><a class="activity-footer" href="#events" data-goto="events">View all events<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></aside>
     </div>
-    <div class="system-strip"><span><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Processing on this device</span><span id="last-sync"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg>Waiting for an update</span></div>
+    <div class="system-strip"><span><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Processing on this device</span><span id="active-model"></span><span id="last-sync"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg>Waiting for an update</span></div>
   </section>
 
   <!-- EVENTS -->
@@ -802,6 +802,7 @@ async function pollStatus() {
   const online = ST.cameras.filter(c => c.online).length;
   $('#online-note').textContent = !ST.cameras.length ? 'No cameras enabled' : online === ST.cameras.length ? 'All cameras connected' : `${ST.cameras.length - online} camera${ST.cameras.length - online === 1 ? '' : 's'} offline`;
   $('#last-sync').innerHTML = icon('pulse') + 'Last synced ' + new Date().toLocaleTimeString([], { hour12: false });
+  $('#active-model').innerHTML = ST.custom_model ? icon('scan') + 'Custom model: ' + esc(ST.custom_model) + (ST.custom_classes?.length ? ' (' + ST.custom_classes.map(esc).join(', ') + ')' : '') : icon('scan') + 'Standard detection';
   $('#k-now').textContent = sum(total);
   $('#k-people').textContent = st.unique.person || 0;
   $('#k-vehicles').textContent = VEHICLES.reduce((a, k) => a + (st.unique[k] || 0), 0);
