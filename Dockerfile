@@ -9,7 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install CPU-only PyTorch first so pip does not pull multi-GB CUDA wheels (useless on Pi/CPU); then the rest.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+ && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
