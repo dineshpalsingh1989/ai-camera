@@ -461,6 +461,11 @@ class TrainingService:
         for z in (self.path('downloads/' + did + '.zip'), self.path('downloads/' + did + '-export.zip')):
             z.unlink(missing_ok=True)
         return {'ok': True}
+
+    def clear_datasets(self):
+        for did in list(self.state['datasets']):
+            self.delete_dataset(did)
+        return {'ok': True}
         return {'ok': True}
 
     def rf(self, suffix='', method='GET', params=None, **kwargs):
@@ -692,6 +697,10 @@ def register_training(app, context, root=None):
                 archive.unlink(missing_ok=True)
             return jsonify(result)
         return jsonify(service.build_dataset((request.get_json(silent=True) or {}).get('photos')))
+
+    @bp.post('/datasets/clear')
+    def clear_datasets():
+        return jsonify(service.clear_datasets())
 
     @bp.delete('/datasets/<did>')
     def delete_dataset(did):

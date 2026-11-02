@@ -134,6 +134,12 @@ class WorkspaceTests(unittest.TestCase):
         self.assertNotIn(ds['id'], self.service.state['datasets'])
         self.assertFalse(self.service.path('datasets/' + ds['id']).exists())
 
+    def test_clear_datasets_removes_all(self):
+        self.dataset(); self.dataset()
+        self.assertTrue(self.service.state['datasets'])
+        self.assertEqual(self.post('/datasets/clear').status_code, 200)
+        self.assertEqual(self.service.state['datasets'], {})
+
     def test_dataset_round_trip_and_snapshot_immutability(self):
         dataset = self.dataset()
         self.assertEqual(dataset['counts'], {'train':4,'val':2})
