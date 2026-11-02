@@ -102,9 +102,11 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.client.delete('/api/training/models/del').status_code, 400)
         self.assertTrue(mfile.exists())
         self.ctx['settings']['custom_model'] = 'previous.pt'  # inactive model deletes with its file
+        self.service.state['history'] = [{'custom_model': str(mfile)}, {'custom_model': 'other.pt'}]
         self.assertEqual(self.client.delete('/api/training/models/del').status_code, 200)
         self.assertNotIn('del', self.service.state['models'])
         self.assertFalse(mfile.exists())
+        self.assertEqual([h['custom_model'] for h in self.service.state['history']], ['other.pt'])  # rollback point pruned
 
     def test_auto_split_assigns_validation_and_enables_build(self):
         for i in range(5):

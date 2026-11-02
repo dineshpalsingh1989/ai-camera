@@ -432,10 +432,10 @@ class TrainingService:
         path = str(self.path(model['file']))
         if path == str(self.ctx['settings'].get('custom_model') or ''):
             raise ValueError('This model is active. Activate another model or roll back before deleting it.')
-        if any(h.get('custom_model') == path for h in self.state['history']):
-            raise ValueError('This model is kept for rollback. Activate a newer model first, then delete it.')
         with self.lock:
             self.state['models'].pop(mid, None)
+            # drop any rollback points that restore this model, so it isn't pinned undeletable forever
+            self.state['history'] = [h for h in self.state['history'] if h.get('custom_model') != path]
             self.save()
         self.path(model['file']).unlink(missing_ok=True)
         return {'ok': True}
