@@ -56,6 +56,8 @@ p.on_alert("test"); p.set_health(True); p.update_status(["x"]); p.cleanup()  # m
 _hw = hardware.info(p)  # Hardware page data must work off-board too (for the demo preview)
 assert _hw["board"] is False and len(_hw["pins"]) >= 10
 assert _hw["inputs"]["DI0"] is None and _hw["outputs"]["DO0"] is None  # no live states off-board
-assert "ip" in _hw["network"]
+assert "L0" in _hw["outputs"] and "ip" in _hw["network"]
+p.set_output("do0", True); p.set_output("unknown", True)  # output control is a safe no-op off-board
+app.sensor_event("DI0")  # digital-input handler must not crash when no camera is online
 
 print("all checks passed")

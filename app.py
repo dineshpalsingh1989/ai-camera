@@ -563,6 +563,15 @@ def notify(text, jpg):
     threading.Thread(target=send, daemon=True).start()
 
 
+def sensor_event(signal):
+    """A digital input went active: raise an event (with the first live camera's frame if any)."""
+    cam = next((c for c in cameras.values() if c.online and c.jpeg), None)
+    if cam:
+        add_event(cam, "input", f"{signal} input triggered", cam.jpeg, force=True)
+    else:
+        peripherals.on_alert(signal)  # no camera online, still sound the alarm
+
+
 def add_event(cam, kind, label, jpg, force=False):
     now = time.time()
     key = (cam.id, kind, label)
@@ -1107,6 +1116,13 @@ def api_hardware():
     return jsonify(hardware.info(peripherals))
 
 
+@app.route("/api/hardware/output", methods=["POST"])
+def api_hardware_output():
+    d = request.get_json(force=True)
+    peripherals.set_output(str(d.get("name", "")), bool(d.get("on")))  # no-op off-board
+    return jsonify(hardware.info(peripherals))
+
+
 @app.route("/api/status")
 def status():
     with stats_lock:
@@ -1279,6 +1295,7 @@ if __name__ == "__main__" and sys.argv[1:2] == ["--probe"]:
 elif __name__ == "__main__":
     start_ai()
     peripherals = hardware.Peripherals(ai is not None and getattr(ai, "label", "") == "Hailo")
+    peripherals.on_input = sensor_event  # digital inputs (DI0/DI1) raise events like a camera detection
     atexit.register(peripherals.cleanup)
     threading.Thread(target=hardware.status_loop, args=(peripherals, cameras), daemon=True).start()
     sync_cameras()

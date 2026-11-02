@@ -604,12 +604,22 @@ async function loadHardware() {
     const nets = h.network.interfaces.length
       ? h.network.interfaces.map(n => `<tr><td>${esc(n.name)}</td><td><span class="pill ${n.state === 'up' ? 'ok' : ''}">${esc(n.state)}</span></td></tr>`).join('')
       : `<tr><td>Primary IP</td><td>${esc(h.network.ip)}</td></tr>`;
+    const controls = Object.keys(h.outputs).map(k => {
+      const on = h.outputs[k];
+      return `<button class="btn ${on ? 'primary' : ''}" data-out="${k.toLowerCase()}" data-on="${on ? 0 : 1}" ${h.board ? '' : 'disabled'}>${esc(k)}: ${on ? 'ON — turn off' : 'off — turn on'}</button>`;
+    }).join(' ');
     setHTML($('#hardware-body'), `
       <div class="card"><h2>Board ${h.board ? '<span class="pill ok">Detected</span>' : '<span class="pill">Not detected</span>'}</h2>
-      <p class="hint">${h.board ? 'Cytron IRIV EdgeAI CM5 with Hailo HAT — live I/O below.' : 'Running on a PC / demo: pin reference is shown for preview; live I/O and board outputs appear only on the IRIV EdgeAI CM5 with the Hailo HAT.'}</p></div>
+      <p class="hint">${h.board ? 'Cytron IRIV EdgeAI CM5 with Hailo HAT — live I/O and controls below.' : 'Running on a PC / demo: pin reference is shown for preview; live I/O and controls work only on the IRIV EdgeAI CM5 with the Hailo HAT. Digital inputs (DI0/DI1) raise events like a camera detection.'}</p></div>
+      <div class="card"><h2>Output control</h2><p class="hint">${h.board ? 'Toggle the isolated outputs (siren/relay), LED drivers, buzzer and status LEDs.' : 'Buttons are disabled off-board.'}</p><div class="row">${controls}</div></div>
       <div class="card"><h2>Network ports</h2><div class="table-scroll"><table><thead><tr><th>Interface</th><th>State / IP</th></tr></thead><tbody>${nets}</tbody></table></div></div>
       <div class="card"><h2>Digital I/O</h2><div class="table-scroll"><table><thead><tr><th>Signal</th><th>State</th></tr></thead><tbody>${io}</tbody></table></div></div>
       <div class="card"><h2>Pin &amp; interface map</h2><div class="table-scroll"><table><thead><tr><th>Function</th><th>Signal</th><th>Pin</th><th>Type</th></tr></thead><tbody>${pins}</tbody></table></div></div>`);
+    $$('#hardware-body [data-out]').forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try { await api('/api/hardware/output', { json: { name: b.dataset.out, on: +b.dataset.on === 1 } }); loadHardware(); }
+      catch (err) { b.disabled = false; }
+    });
   } catch (e) {
     setHTML($('#hardware-body'), emptyState('shield', 'Hardware unavailable', 'Reconnect to the server and open Hardware again.'));
   }

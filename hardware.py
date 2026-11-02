@@ -13,6 +13,7 @@ import time
 BUZZER, LED0, LED1 = 19, 20, 21   # active buzzer + user LEDs
 DO0, DO1 = 23, 24                 # isolated digital outputs — drive an external siren / strobe / relay
 DI0, DI1 = 22, 27                 # isolated digital inputs (PNP/NPN sensors up to 50V)
+L0, L1 = 12, 13                   # LED lighting drivers (wet contact, Vin, up to 2A)
 OLED_ADDR = 0x3C                  # SSD1315 0.96" OLED on I2C1
 
 # Full interface reference for the Hardware page (datasheet section 5.1). Always viewable, even on a PC.
@@ -53,6 +54,7 @@ class Peripherals:
         self.oled = None
         self._out = {}
         self._in = {}
+        self.on_input = None  # app sets this to raise an event when a digital input activates
         self._lock = threading.Lock()
         if self.enabled:
             self._setup_gpio()
@@ -62,11 +64,26 @@ class Peripherals:
         try:
             from gpiozero import LED, Buzzer, DigitalInputDevice  # uses lgpio on Pi 5 / CM5
             self._out = {"buzzer": Buzzer(BUZZER), "led0": LED(LED0), "led1": LED(LED1),
-                         "do0": LED(DO0), "do1": LED(DO1)}
+                         "do0": LED(DO0), "do1": LED(DO1), "l0": LED(L0), "l1": LED(L1)}
             self._in = {"di0": DigitalInputDevice(DI0), "di1": DigitalInputDevice(DI1)}
+            self._in["di0"].when_activated = lambda: self._fire_input("DI0")
+            self._in["di1"].when_activated = lambda: self._fire_input("DI1")
         except Exception as e:  # missing lib or pin busy -> skip GPIO, keep running
             print(f"[hardware] GPIO unavailable: {e}")
             self._out, self._in = {}, {}
+
+    def _fire_input(self, signal):
+        if self.on_input:
+            try:
+                self.on_input(signal)
+            except Exception as e:
+                print(f"[hardware] input handler error: {e}")
+
+    def set_output(self, name, on):
+        """Turn a named output on/off (do0/do1/led0/led1/l0/l1/buzzer). No-op when the board is absent."""
+        dev = self._out.get(name)
+        if dev is not None:
+            dev.on() if on else dev.off()
 
     def _setup_oled(self):
         try:
@@ -165,6 +182,6 @@ def info(peripherals):
         "board": peripherals.enabled,
         "pins": PIN_MAP,
         "inputs": {"DI0": value(peripherals._in, "di0"), "DI1": value(peripherals._in, "di1")},
-        "outputs": {k.upper(): value(peripherals._out, k) for k in ("do0", "do1", "led0", "led1", "buzzer")},
+        "outputs": {k.upper(): value(peripherals._out, k) for k in ("do0", "do1", "l0", "l1", "led0", "led1", "buzzer")},
         "network": network_interfaces(),
     }
