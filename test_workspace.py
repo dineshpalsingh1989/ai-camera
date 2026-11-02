@@ -106,6 +106,17 @@ class WorkspaceTests(unittest.TestCase):
         self.assertNotIn('del', self.service.state['models'])
         self.assertFalse(mfile.exists())
 
+    def test_auto_split_assigns_validation_and_enables_build(self):
+        for i in range(5):
+            p = self.service.add_photo(jpg(i))
+            self.client.patch('/api/training/photos/' + p['id'],
+                              json={'boxes': [{'label':'egg','x1':.2,'y1':.2,'x2':.7,'y2':.7}], 'reviewed': True})
+        result = self.post('/auto-split').json
+        self.assertGreaterEqual(result['train'], 2)
+        self.assertGreaterEqual(result['val'], 2)
+        self.assertEqual(result['train'] + result['val'], 5)
+        self.assertEqual(self.post('/datasets').status_code, 200)  # build now succeeds
+
     def test_dataset_round_trip_and_snapshot_immutability(self):
         dataset = self.dataset()
         self.assertEqual(dataset['counts'], {'train':4,'val':2})

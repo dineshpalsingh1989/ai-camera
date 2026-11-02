@@ -241,6 +241,7 @@
   });
   action('#delete-photo',async()=>{if(!editing||!confirm('Delete this training photo and its labels? Existing dataset snapshots are kept.'))return;await api(endpoint+'/photos/'+editing,{method:'DELETE'});editing=null;$('#label-editor').classList.add('hidden');message('Photo deleted.');});
   action('#build-dataset',async()=>{const d=await post('/datasets');message(`Dataset built: ${d.counts.train} training and ${d.counts.val} validation images.`);});
+  action('#auto-split',async()=>{const r=await post('/auto-split');message(`Auto-split done: ${r.train} training and ${r.val} validation. Now click "Build from reviewed photos".`);});
   action('#start-training',async()=>{
     await post('/train',{dataset:$('#train-dataset').value,name:$('#train-name').value,base_model:$('#train-base').value,epochs:+$('#train-epochs').value,imgsz:+$('#train-size').value,batch:+$('#train-batch').value,device:$('#train-device').value});
     message('Training started. You can monitor cameras while the job runs.');

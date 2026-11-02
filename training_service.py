@@ -261,6 +261,21 @@ class TrainingService:
             text = text.replace(self.connection['api_key'], '[redacted]')
         return re.sub(r'https?://\S+', '[remote service]', text)
 
+    def auto_split(self):
+        """Assign ~20% of reviewed photos to validation and the rest to training, spread evenly across
+        capture order so the split is reproducible and validation is not all from one moment."""
+        with self.lock:
+            reviewed = sorted((p for p in self.state['photos'].values() if p['reviewed']), key=lambda p: p['created'])
+            n = len(reviewed)
+            if n < 4:
+                raise ValueError('Need at least 4 reviewed photos to auto-split (2 training and 2 validation).')
+            n_val = min(max(2, round(n * 0.2)), n - 2)  # keep at least 2 in each split
+            val_idx = {int(j * n / n_val) for j in range(n_val)}
+            for i, photo in enumerate(reviewed):
+                photo['split'] = 'val' if i in val_idx else 'train'
+            self.save()
+        return {'train': n - len(val_idx), 'val': len(val_idx)}
+
     def build_dataset(self, selected=None):
         with self.lock:
             photos = copy.deepcopy([p for p in self.state['photos'].values() if p['reviewed'] and (selected is None or p['id'] in selected)])
@@ -634,6 +649,10 @@ def register_training(app, context, root=None):
                                                  'confidence': bounded(data.get('confidence', .7), .05, .95, float), 'split': data.get('split','train')}
             service.save()
         return jsonify(ok=True)
+
+    @bp.post('/auto-split')
+    def auto_split():
+        return jsonify(service.auto_split())
 
     @bp.post('/datasets')
     def dataset():
