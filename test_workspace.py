@@ -140,6 +140,16 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.post('/datasets/clear').status_code, 200)
         self.assertEqual(self.service.state['datasets'], {})
 
+    def test_rename_and_deactivate_model(self):
+        self.service.state['models']['m'] = {'id':'m','name':'Old','file':'models/m.pt','classes':['egg'],'evaluations':{}}
+        self.assertEqual(self.post('/models/m/rename', {'name':'New Name'}).status_code, 200)
+        self.assertEqual(self.service.state['models']['m']['name'], 'New Name')
+        self.ctx['settings']['custom_model'] = 'models/m.pt'
+        self.ctx['settings']['cameras'][0]['features']['custom'] = True
+        self.assertEqual(self.post('/deactivate').status_code, 200)
+        self.assertEqual(self.ctx['settings']['custom_model'], '')
+        self.assertFalse(self.ctx['settings']['cameras'][0]['features']['custom'])
+
     def test_dataset_round_trip_and_snapshot_immutability(self):
         dataset = self.dataset()
         self.assertEqual(dataset['counts'], {'train':4,'val':2})

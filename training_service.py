@@ -422,6 +422,36 @@ class TrainingService:
         self.ctx['sync_cameras']()
         return {'ok': True}
 
+    def rename_model(self, mid, name):
+        name = str(name).strip()[:120]
+        if not name:
+            raise ValueError('Enter a model name')
+        with self.lock:
+            self.item('models', mid)['name'] = name
+            self.save()
+        return {'ok': True}
+
+    def deactivate(self):
+        """Turn off custom detection everywhere (back to standard detection); the model stays in the library."""
+        with self.lock, self.ctx['custom_lock']:
+            settings = self.ctx['settings']
+            previous = {'custom_model': settings['custom_model'], 'custom_classes': settings['custom_classes'][:],
+                        'cameras': {c['id']: c['features']['custom'] for c in settings['cameras']}}
+            if not settings['custom_model'] and not any(previous['cameras'].values()):
+                return {'ok': True}  # already off
+            updated = copy.deepcopy(settings)
+            updated['custom_model'] = ''
+            for c in updated['cameras']:
+                c['features']['custom'] = False
+            self.ctx['save_settings'](updated)
+            self.ctx['settings'] = updated
+            self.ctx['custom_det'], self.ctx['custom_error'] = None, ''
+            self.state['history'].append(previous)
+            self.state['history'] = self.state['history'][-10:]
+            self.save()
+        self.ctx['sync_cameras']()
+        return {'ok': True}
+
     def rollback(self):
         with self.lock:
             if not self.state['history']:
@@ -784,6 +814,14 @@ def register_training(app, context, root=None):
     @bp.post('/models/<mid>/activate')
     def activate(mid):
         return jsonify(service.activate(mid, request.get_json().get('cameras', [])))
+
+    @bp.post('/models/<mid>/rename')
+    def rename_model(mid):
+        return jsonify(service.rename_model(mid, (request.get_json() or {}).get('name', '')))
+
+    @bp.post('/deactivate')
+    def deactivate():
+        return jsonify(service.deactivate())
 
     @bp.delete('/models/<mid>')
     def delete_model(mid):

@@ -253,7 +253,7 @@
     const did=$('#evaluate-dataset').value;
     const html=training.models.map(m=>{
       const metrics=m.evaluations[did], active=training.active_model.replaceAll('\\','/').endsWith('/'+m.file.replaceAll('\\','/'));
-      return `<article class="model-card"><div class="row"><h3>${esc(m.name)}</h3><span class="chip ${active?'reviewed':''}">${active?'Active':'Candidate'}</span></div><p class="hint">${esc(m.classes.join(', '))}</p><div class="model-metrics"><span>Precision<b>${percent(metrics?.precision)}</b></span><span>Recall<b>${percent(metrics?.recall)}</b></span><span>mAP@50<b>${percent(metrics?.map50)}</b></span><span>mAP@50–95<b>${percent(metrics?.map50_95)}</b></span></div><p class="hint">${metrics?'Scores on the selected comparison dataset.':'Not evaluated on the selected dataset.'}</p><div class="row"><button class="btn" data-evaluate="${m.id}" ${!did?'disabled':''}>Evaluate</button><button class="btn ${active?'':'primary'}" data-activate="${m.id}" ${active||!Object.keys(m.evaluations).length?'disabled':''}>${active?'✓ Active':'Activate'}</button><a class="btn" href="${endpoint}/models/${m.id}/download">Download .pt</a><button class="btn danger" data-delete-model="${m.id}" ${active?'disabled':''} title="${active?'Active model cannot be deleted':'Delete this model'}">Delete</button></div></article>`;
+      return `<article class="model-card"><div class="row"><h3>${esc(m.name)}</h3><span class="chip ${active?'reviewed':''}">${active?'Active':'Candidate'}</span></div><p class="hint">${esc(m.classes.join(', '))}</p><div class="model-metrics"><span>Precision<b>${percent(metrics?.precision)}</b></span><span>Recall<b>${percent(metrics?.recall)}</b></span><span>mAP@50<b>${percent(metrics?.map50)}</b></span><span>mAP@50–95<b>${percent(metrics?.map50_95)}</b></span></div><p class="hint">${metrics?'Scores on the selected comparison dataset.':'Not evaluated on the selected dataset.'}</p><div class="row"><button class="btn" data-evaluate="${m.id}" ${!did?'disabled':''}>Evaluate</button><button class="btn ${active?'':'primary'}" data-activate="${m.id}" ${active||!Object.keys(m.evaluations).length?'disabled':''}>${active?'✓ Active':'Activate'}</button><a class="btn" href="${endpoint}/models/${m.id}/download">Download .pt</a><button class="btn" data-rename="${m.id}">Rename</button><button class="btn danger" data-delete-model="${m.id}" ${active?'disabled':''} title="${active?'Active model cannot be deleted':'Delete this model'}">Delete</button></div></article>`;
     }).join('')||emptyState('scan','No custom candidates yet','Train a model, import a compatible .pt file, or download weights from Roboflow.');
     setHTML($('#model-list'),html);
     $$('[data-evaluate]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await post('/models/'+button.dataset.evaluate+'/evaluate',{dataset:$('#evaluate-dataset').value});message('Evaluation started on held-out validation images.');await loadTraining();}catch(err){message(err.message,true);}finally{button.disabled=false;}});
@@ -262,6 +262,7 @@
       button.disabled=true;
       try{await post('/models/'+button.dataset.activate+'/activate',{cameras:ids});await refreshSettings();message('Custom model activated. Previous model is available for rollback.');await loadTraining();}catch(err){message(err.message,true);}finally{button.disabled=false;}
     });
+    $$('[data-rename]').forEach(b=>b.onclick=async()=>{const name=prompt('New model name:');if(name==null||!name.trim())return;try{await post('/models/'+b.dataset.rename+'/rename',{name});message('Model renamed.');await loadTraining();}catch(err){message(err.message,true);}});
     $$('[data-delete-model]').forEach(button=>button.onclick=async()=>{
       if(!confirm('Delete this model permanently? This cannot be undone.'))return;
       button.disabled=true;
@@ -271,6 +272,7 @@
   $('#evaluate-dataset').onchange=renderModels;
   async function refreshSettings(){S=await api('/api/settings');renderGrid();renderGlobal();if(!$('#settings').classList.contains('hidden'))renderEditor();await pollStatus();}
   action('#rollback-model',async()=>{await post('/rollback');await refreshSettings();message('Previous custom model and camera selection restored.');});
+  action('#deactivate-model',async()=>{await post('/deactivate');await refreshSettings();message('Custom detection turned off. Standard detection is running.');});
   const baselineButton=document.createElement('button');baselineButton.className='btn';baselineButton.id='import-current-model';baselineButton.textContent='Add current model for comparison';
   $('#rollback-model').after(baselineButton);
   action('#import-current-model',async()=>{await post('/models/current');message('Current custom model is being copied into the library. Evaluate it on the same dataset as your candidate.');});
