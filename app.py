@@ -61,7 +61,8 @@ DEFAULTS = {
     "password": "admin",
 }
 SECRETS = ("password", "telegram_token")
-CONN_KEYS = ("type", "brand", "ip", "port", "user", "pass", "stream", "path", "usb", "http", "file", "url")  # form fields the UI builds the source from
+CONN_KEYS = ("type", "brand", "ip", "port", "user", "pass", "stream", "path", "usb", "http", "file", "url",
+             "csicam", "csiw", "csih")  # form fields the UI builds the source from
 
 
 # ---------------------------------------------------------------- settings
@@ -601,6 +602,8 @@ def add_event(cam, kind, label, jpg, force=False):
 def open_capture(src):
     if src.isdigit():  # USB webcam index; DirectShow opens in ~1 s on Windows vs ~8 s for the default
         return cv2.VideoCapture(int(src), cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
+    if "appsink" in src:  # GStreamer pipeline, e.g. a CSI / Pi camera via libcamera (needs OpenCV built with GStreamer)
+        return cv2.VideoCapture(src, cv2.CAP_GSTREAMER)
     return cv2.VideoCapture(src, cv2.CAP_FFMPEG,
                             [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000])
 

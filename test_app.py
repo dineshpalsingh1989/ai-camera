@@ -60,4 +60,14 @@ assert "L0" in _hw["outputs"] and "ip" in _hw["network"]
 p.set_output("do0", True); p.set_output("unknown", True)  # output control is a safe no-op off-board
 app.sensor_event("DI0")  # digital-input handler must not crash when no camera is online
 
+# CSI / GStreamer pipeline opens with the GStreamer backend; a normal URL uses FFMPEG
+_calls = []
+_orig_cap = app.cv2.VideoCapture
+app.cv2.VideoCapture = lambda *a, **k: (_calls.append(a) or type("C", (), {"isOpened": lambda s: False})())
+app.open_capture("libcamerasrc ! video/x-raw ! videoconvert ! appsink")
+app.open_capture("rtsp://host/stream")
+app.cv2.VideoCapture = _orig_cap
+assert _calls[0][1] == app.cv2.CAP_GSTREAMER, _calls[0]
+assert _calls[1][1] == app.cv2.CAP_FFMPEG, _calls[1]
+
 print("all checks passed")

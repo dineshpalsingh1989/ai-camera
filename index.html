@@ -386,7 +386,7 @@
           <label>Connection type</label>
           <div class="seg" id="c-type">
             <button data-type="ip">IP camera (RTSP)</button><button data-type="usb">USB / laptop webcam</button>
-            <button data-type="http">HTTP / phone stream</button><button data-type="file">Video file</button><button data-type="url">Custom URL</button>
+            <button data-type="http">HTTP / phone stream</button><button data-type="csi">CSI / Pi camera</button><button data-type="file">Video file</button><button data-type="url">Custom URL</button>
           </div>
           <div class="conn" data-for="ip">
             <div class="two">
@@ -406,6 +406,7 @@
             <small>0 = built-in webcam, 1 = next USB camera, and so on.</small></div>
           <div class="conn" data-for="http"><label>Stream URL</label><input type="text" data-k="http" placeholder="http://192.168.0.60:8080/video">
             <small>MJPEG/HTTP stream, e.g. the "IP Webcam" phone app.</small></div>
+          <div class="conn" data-for="csi"><div class="three"><div><label>Camera port</label><input type="number" data-k="csicam" min="0" max="1" placeholder="0"></div><div><label>Width</label><input type="number" data-k="csiw" min="160" max="4096" placeholder="1280"></div><div><label>Height</label><input type="number" data-k="csih" min="120" max="2160" placeholder="720"></div></div><small>Raspberry Pi / IRIV MIPI camera via libcamera. Needs OpenCV built with GStreamer (standard on Raspberry Pi OS).</small></div>
           <div class="conn" data-for="file"><label>Video file path (on the AI Camera computer)</label><input type="text" data-k="file" placeholder="/home/pi/videos/test.mp4">
             <small>Loops forever. Good for testing zones and AI without a camera.</small></div>
           <div class="conn" data-for="url"><label>Full URL</label><input type="text" data-k="url" placeholder="rtsp://user:pass@host:554/path"></div>
@@ -976,6 +977,10 @@ function guessConn(src = '') {
 
 function buildSource(k) {
   if (k.type === 'usb') return String(k.usb || 0);
+  if (k.type === 'csi') {  // Raspberry Pi / IRIV MIPI camera via libcamera (GStreamer pipeline)
+    const sel = (+k.csicam > 0) ? `camera-index=${+k.csicam} ` : '';
+    return `libcamerasrc ${sel}! video/x-raw,width=${k.csiw || 1280},height=${k.csih || 720},framerate=30/1 ! videoconvert ! appsink`;
+  }
   if (k.type !== 'ip') return (k[k.type] || '').trim();
   if (!k.ip) return '';
   const b = BRANDS[k.brand] || BRANDS.generic;

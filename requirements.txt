@@ -1,0 +1,12 @@
+# Core runtime for the AI Camera dashboard (PC/CPU and Raspberry Pi).
+# On a Raspberry Pi with a Hailo HAT, also install HailoRT via the system package: sudo apt install hailo-all
+flask>=3,<4
+requests>=2.28
+numpy>=1.24
+opencv-python<5
+PyYAML>=6,<7
+ultralytics>=8.3,<9        # CPU detection fallback (and the base for custom training)
+
+# Optional extras (install only if needed):
+#   Custom-model training / quality inspection:  pip install -r requirements-training.txt
+#   Cytron IRIV EdgeAI CM5 board peripherals:     pip install gpiozero lgpio luma.oled

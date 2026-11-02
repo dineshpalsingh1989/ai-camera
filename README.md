@@ -40,7 +40,7 @@ draw boxes, and mark each photo reviewed. Only reviewed labels enter local train
 
 ```
 python -m venv .venv
-.venv/Scripts/pip install flask requests "opencv-python<5" numpy ultralytics PyYAML   # Linux: .venv/bin/pip
+.venv/Scripts/pip install -r requirements.txt   # Linux: .venv/bin/pip
 .venv/Scripts/python app.py
 ```
 
