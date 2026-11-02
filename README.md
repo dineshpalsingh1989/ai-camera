@@ -47,6 +47,19 @@ python -m venv .venv
 Open http://127.0.0.1:8080 and log in with `admin` / `admin` (change it in Settings → Login).
 Add cameras in Settings → Cameras (RTSP brands, USB webcam, HTTP stream, video file; **Find cameras** scans the network).
 
+## Run with Docker
+
+A prebuilt multi-arch image (amd64 + arm64) is published to GitHub Packages on every push:
+
+```
+docker run -p 8080:8080 \
+  -v ai-camera-events:/app/events -v ai-camera-workspace:/app/ai-workspace \
+  ghcr.io/dineshpalsingh1989/ai-camera:latest
+```
+
+This runs the dashboard with CPU detection. Hailo acceleration needs HailoRT and `/dev/hailo0`
+passed through from the host, so for a Raspberry Pi + Hailo install, use `install.sh` below instead.
+
 ## Install on a Raspberry Pi with Hailo
 
 ```
