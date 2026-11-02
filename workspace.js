@@ -272,8 +272,11 @@
   $('#rollback-model').after(baselineButton);
   action('#import-current-model',async()=>{await post('/models/current');message('Current custom model is being copied into the library. Evaluate it on the same dataset as your candidate.');});
   function renderJobs(){
-    const html=training.jobs.slice(0,12).map(j=>`<article class="job-row"><div class="row"><b>${esc(j.kind)}</b><span class="chip ${j.status==='completed'?'reviewed':j.status==='failed'?'alert':''}">${esc(j.status)}</span><span class="spacer"></span>${['queued','running'].includes(j.status)?`<button class="btn" data-cancel-job="${j.id}">Cancel</button>`:''}</div><progress max="100" value="${Math.max(0,Math.min(100,j.progress||0))}" aria-label="${esc(j.kind)} progress"></progress><p class="hint">${esc(j.message)}</p></article>`).join('')||'<p class="hint">Your training, import, upload and download jobs will appear here.</p>';
+    const finished=training.jobs.some(j=>['completed','failed','cancelled'].includes(j.status));
+    const clearBtn=finished?`<div class="row"><span class="spacer"></span><button class="btn" id="clear-jobs">Clear finished jobs</button></div>`:'';
+    const html=clearBtn+(training.jobs.slice(0,12).map(j=>`<article class="job-row"><div class="row"><b>${esc(j.kind)}</b><span class="chip ${j.status==='completed'?'reviewed':j.status==='failed'?'alert':''}">${esc(j.status)}</span><span class="spacer"></span>${['queued','running'].includes(j.status)?`<button class="btn" data-cancel-job="${j.id}">Cancel</button>`:''}</div><progress max="100" value="${Math.max(0,Math.min(100,j.progress||0))}" aria-label="${esc(j.kind)} progress"></progress><p class="hint">${esc(j.message)}</p></article>`).join('')||'<p class="hint">Your training, import, upload and download jobs will appear here.</p>');
     setHTML($('#training-jobs'),html);
+    if(finished)$('#clear-jobs').onclick=async()=>{try{await post('/jobs/clear');await loadTraining();}catch(err){message(err.message,true);}};
     $$('[data-cancel-job]').forEach(button=>button.onclick=async()=>{try{await post('/jobs/'+button.dataset.cancelJob+'/cancel');await loadTraining();}catch(err){message(err.message,true);}});
   }
   action('#rf-connect',async()=>{const result=await post('/roboflow/connect',{workspace:$('#rf-workspace').value.trim(),project:$('#rf-project').value.trim(),api_key:$('#rf-key').value});$('#rf-key').value='';message('Connected to '+result.project);});

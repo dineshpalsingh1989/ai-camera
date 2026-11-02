@@ -236,6 +236,10 @@ class TrainingService:
                 raise ValueError('Another job is running. Wait for it to finish or cancel it first')
             jid = uuid.uuid4().hex[:12]
             self.state['jobs'][jid] = {'id': jid, 'kind': kind, 'created': time.time(), 'status': 'queued', 'progress': 0, 'message': 'Queued'}
+            done = sorted((j for j in self.state['jobs'].values() if j['status'] in ('completed', 'failed', 'cancelled')),
+                          key=lambda j: j['created'])
+            for old in done[:-20]:  # keep the job log bounded to the 20 most recent finished jobs
+                self.state['jobs'].pop(old['id'], None)
             self.save()
         def run():
             try:
@@ -251,6 +255,14 @@ class TrainingService:
                 self.processes.pop(jid, None)
         threading.Thread(target=run, daemon=True).start()
         return {'job_id': jid}
+
+    def clear_jobs(self):
+        """Remove finished jobs from the log; running/queued jobs are kept."""
+        with self.lock:
+            self.state['jobs'] = {jid: j for jid, j in self.state['jobs'].items()
+                                  if j['status'] in ('queued', 'running', 'cancelling')}
+            self.save()
+        return {'ok': True}
 
     def check_cancel(self, jid):
         if jid in self.cancelled:
@@ -757,6 +769,10 @@ def register_training(app, context, root=None):
     @bp.post('/rollback')
     def rollback():
         return jsonify(service.rollback())
+
+    @bp.post('/jobs/clear')
+    def clear_jobs():
+        return jsonify(service.clear_jobs())
 
     @bp.post('/jobs/<jid>/cancel')
     def cancel(jid):

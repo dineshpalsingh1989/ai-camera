@@ -119,6 +119,14 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(result['train'] + result['val'], 5)
         self.assertEqual(self.post('/datasets').status_code, 200)  # build now succeeds
 
+    def test_clear_jobs_removes_finished_keeps_running(self):
+        self.service.state['jobs'] = {
+            'a': {'id': 'a', 'status': 'completed', 'created': 1},
+            'b': {'id': 'b', 'status': 'running', 'created': 2},
+            'c': {'id': 'c', 'status': 'failed', 'created': 3}}
+        self.assertEqual(self.post('/jobs/clear').status_code, 200)
+        self.assertEqual(set(self.service.state['jobs']), {'b'})
+
     def test_dataset_round_trip_and_snapshot_immutability(self):
         dataset = self.dataset()
         self.assertEqual(dataset['counts'], {'train':4,'val':2})
