@@ -775,7 +775,7 @@ async function pollStatus() {
   }
   $('#connection-error').classList.add('hidden');
   $('#ai').className = 'pill ' + (ST.ai_ok ? 'ok' : 'bad');
-  $('#ai').textContent = ST.ai_ok ? `AI · ${ST.ai_backend} running` : 'AI off';
+  $('#ai').textContent = ST.ai_ok ? `AI · ${ST.ai_backend} running` + (ST.custom_model ? ` · ${ST.custom_model}` : '') : 'AI off';
   $('#ai').title = ST.ai_error;
   const total = {};
   ST.cameras.forEach(c => {
