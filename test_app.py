@@ -53,5 +53,9 @@ assert hardware.board_present(True) is False            # this dev machine is no
 p = hardware.Peripherals(False)
 assert p.enabled is False
 p.on_alert("test"); p.set_health(True); p.update_status(["x"]); p.cleanup()  # must not raise when disabled
+_hw = hardware.info(p)  # Hardware page data must work off-board too (for the demo preview)
+assert _hw["board"] is False and len(_hw["pins"]) >= 10
+assert _hw["inputs"]["DI0"] is None and _hw["outputs"]["DO0"] is None  # no live states off-board
+assert "ip" in _hw["network"]
 
 print("all checks passed")

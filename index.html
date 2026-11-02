@@ -300,6 +300,7 @@
     <button data-tab="analytics" title="Analytics"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><span class="nav-text">Analytics</span></button>
     <button data-tab="training" title="AI Training"><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg><span class="nav-text">AI Training</span></button>
     <button data-tab="health" title="Camera health"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg><span class="nav-text">Camera health</span></button>
+    <button data-tab="hardware" title="Hardware"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span class="nav-text">Hardware</span></button>
     <button data-tab="settings" title="Settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg><span class="nav-text">Settings</span></button>
   </nav>
   <div class="sidebar-bottom">
@@ -512,6 +513,7 @@
     <div class="savebar"><button class="btn primary" id="save">Save settings</button><span id="save-msg" class="muted"></span></div>
   </section>
   <section id="health" class="hidden"><div class="card"><h2>Camera connection health</h2><p class="hint">Live connection status, detection speed and the last frame received. Reconnection attempts are counted since the server started.</p><div class="table-scroll"><table><thead><tr><th>Camera</th><th>Group</th><th>Status</th><th>AI FPS</th><th>Last frame</th><th>Last connected</th><th>Reconnects</th></tr></thead><tbody id="health-rows"></tbody></table></div></div></section>
+  <section id="hardware" class="hidden"><div id="hardware-body"></div></section>
   <section id="training" class="hidden">
     <div class="training-intro card"><div><h2>Build a model for your cameras</h2><p class="hint">Collect → Review &amp; label → Train → Evaluate → Activate. Automatic collection suggests examples; only reviewed labels enter local training.</p></div><span class="pill">Local-first training</span></div>
     <div class="seg training-tabs" aria-label="Training workspace"><button class="active" data-training="photos">1 · Photos &amp; labels</button><button data-training="datasets">2 · Datasets &amp; training</button><button data-training="models">3 · Models &amp; evaluation</button><button data-training="roboflow">Roboflow connection</button></div>
@@ -561,6 +563,7 @@ const PAGES = {
   settings: ['Workspace settings', 'Connect your cameras and fine-tune your detection.', 'CONFIGURATION'],
   training: ['AI Training', 'Turn reviewed camera examples into a custom detector.', 'LEARNING WORKSPACE'],
   health: ['Camera health', 'Connection and performance at a glance.', 'SYSTEM STATUS'],
+  hardware: ['Hardware', 'Board pins, I/O and network ports (Cytron IRIV EdgeAI CM5).', 'SYSTEM STATUS'],
 };
 function showTab(name) {
   if (!PAGES[name]) return;
@@ -587,6 +590,28 @@ function showTab(name) {
     if (name === 'settings') renderEditor();
     if (name === 'training') window.loadTraining?.();
     if (name === 'health') window.updateWorkspaceStatus?.(ST);
+    if (name === 'hardware') loadHardware();
+  }
+}
+async function loadHardware() {
+  try {
+    const h = await api('/api/hardware');
+    const yn = v => v == null ? '—' : v ? 'ON' : 'off';
+    const io = Object.entries({ ...h.inputs, ...h.outputs }).map(([k, v]) =>
+      `<tr><td>${esc(k)}</td><td><span class="pill ${v ? 'ok' : ''}">${yn(v)}</span></td></tr>`).join('');
+    const pins = h.pins.map(p =>
+      `<tr><td>${esc(p.function)}</td><td>${esc(p.signal || '—')}</td><td>${esc(p.pin)}</td><td>${esc(p.type)}</td></tr>`).join('');
+    const nets = h.network.interfaces.length
+      ? h.network.interfaces.map(n => `<tr><td>${esc(n.name)}</td><td><span class="pill ${n.state === 'up' ? 'ok' : ''}">${esc(n.state)}</span></td></tr>`).join('')
+      : `<tr><td>Primary IP</td><td>${esc(h.network.ip)}</td></tr>`;
+    setHTML($('#hardware-body'), `
+      <div class="card"><h2>Board ${h.board ? '<span class="pill ok">Detected</span>' : '<span class="pill">Not detected</span>'}</h2>
+      <p class="hint">${h.board ? 'Cytron IRIV EdgeAI CM5 with Hailo HAT — live I/O below.' : 'Running on a PC / demo: pin reference is shown for preview; live I/O and board outputs appear only on the IRIV EdgeAI CM5 with the Hailo HAT.'}</p></div>
+      <div class="card"><h2>Network ports</h2><div class="table-scroll"><table><thead><tr><th>Interface</th><th>State / IP</th></tr></thead><tbody>${nets}</tbody></table></div></div>
+      <div class="card"><h2>Digital I/O</h2><div class="table-scroll"><table><thead><tr><th>Signal</th><th>State</th></tr></thead><tbody>${io}</tbody></table></div></div>
+      <div class="card"><h2>Pin &amp; interface map</h2><div class="table-scroll"><table><thead><tr><th>Function</th><th>Signal</th><th>Pin</th><th>Type</th></tr></thead><tbody>${pins}</tbody></table></div></div>`);
+  } catch (e) {
+    setHTML($('#hardware-body'), emptyState('shield', 'Hardware unavailable', 'Reconnect to the server and open Hardware again.'));
   }
 }
 $$('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));

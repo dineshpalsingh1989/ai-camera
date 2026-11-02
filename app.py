@@ -1102,6 +1102,11 @@ def pause(cid):
     return jsonify(paused=cam.paused)
 
 
+@app.route("/api/hardware")
+def api_hardware():
+    return jsonify(hardware.info(peripherals))
+
+
 @app.route("/api/status")
 def status():
     with stats_lock:

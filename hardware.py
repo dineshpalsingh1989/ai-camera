@@ -4,6 +4,7 @@ Everything here is a safe no-op unless a real CM5 *and* the Hailo HAT are detect
 and the demo still run unchanged on an ordinary PC. Pin map is from the IRIV EdgeAI CM5 datasheet.
 GPIO/OLED code only runs on the board and must be verified there; it never affects monitoring.
 """
+import os
 import socket
 import threading
 import time
@@ -11,7 +12,25 @@ import time
 # IRIV EdgeAI CM5 pin map (BCM numbering), from the datasheet "Pin & Interface Mapping".
 BUZZER, LED0, LED1 = 19, 20, 21   # active buzzer + user LEDs
 DO0, DO1 = 23, 24                 # isolated digital outputs — drive an external siren / strobe / relay
+DI0, DI1 = 22, 27                 # isolated digital inputs (PNP/NPN sensors up to 50V)
 OLED_ADDR = 0x3C                  # SSD1315 0.96" OLED on I2C1
+
+# Full interface reference for the Hardware page (datasheet section 5.1). Always viewable, even on a PC.
+PIN_MAP = [
+    {"function": "Isolated RS485", "signal": "A/B/G", "pin": "/dev/ttyACM0", "type": "serial"},
+    {"function": "Digital Input", "signal": "DI0", "pin": "GPIO22", "type": "input"},
+    {"function": "Digital Input", "signal": "DI1", "pin": "GPIO27", "type": "input"},
+    {"function": "Digital Output", "signal": "DO0", "pin": "GPIO23", "type": "output"},
+    {"function": "Digital Output", "signal": "DO1", "pin": "GPIO24", "type": "output"},
+    {"function": "LED Driver", "signal": "L0", "pin": "GPIO12", "type": "output"},
+    {"function": "LED Driver", "signal": "L1", "pin": "GPIO13", "type": "output"},
+    {"function": "User Button", "signal": "", "pin": "GPIO4", "type": "input"},
+    {"function": "User LED", "signal": "LED0", "pin": "GPIO20", "type": "output"},
+    {"function": "User LED", "signal": "LED1", "pin": "GPIO21", "type": "output"},
+    {"function": "Active Buzzer", "signal": "", "pin": "GPIO19", "type": "output"},
+    {"function": "OLED Display", "signal": "SSD1315", "pin": "I2C1 0x3C", "type": "i2c"},
+    {"function": "Secure Element", "signal": "ATECC608", "pin": "I2C1 0x60", "type": "i2c"},
+]
 
 
 def board_present(hailo_ready):
@@ -33,6 +52,7 @@ class Peripherals:
         self.enabled = board_present(hailo_ready)
         self.oled = None
         self._out = {}
+        self._in = {}
         self._lock = threading.Lock()
         if self.enabled:
             self._setup_gpio()
@@ -40,12 +60,13 @@ class Peripherals:
 
     def _setup_gpio(self):
         try:
-            from gpiozero import LED, Buzzer  # uses lgpio on Pi 5 / CM5
+            from gpiozero import LED, Buzzer, DigitalInputDevice  # uses lgpio on Pi 5 / CM5
             self._out = {"buzzer": Buzzer(BUZZER), "led0": LED(LED0), "led1": LED(LED1),
                          "do0": LED(DO0), "do1": LED(DO1)}
+            self._in = {"di0": DigitalInputDevice(DI0), "di1": DigitalInputDevice(DI1)}
         except Exception as e:  # missing lib or pin busy -> skip GPIO, keep running
             print(f"[hardware] GPIO unavailable: {e}")
-            self._out = {}
+            self._out, self._in = {}, {}
 
     def _setup_oled(self):
         try:
@@ -117,3 +138,33 @@ def status_loop(peripherals, cameras, interval=5):
         peripherals.set_health(total > 0 and online == total)
         peripherals.update_status(["AI Camera", f"IP {ip}", f"Cameras {online}/{total}"])
         time.sleep(interval)
+
+
+def network_interfaces():
+    """Network ports with link state. Full detail on Linux (the board, eth0/eth1); IP only on a plain PC."""
+    try:
+        names = [n for n in sorted(os.listdir("/sys/class/net")) if n != "lo"]
+    except OSError:  # not Linux (dev PC): no per-interface detail without extra deps
+        return {"ip": _local_ip(), "interfaces": []}
+    out = []
+    for name in names:
+        try:
+            state = open(f"/sys/class/net/{name}/operstate").read().strip()
+        except OSError:
+            state = "unknown"
+        out.append({"name": name, "state": state})
+    return {"ip": _local_ip(), "interfaces": out}
+
+
+def info(peripherals):
+    """Everything the Hardware page shows. Works on any machine: off-board, states are null and board is False."""
+    def value(store, key):
+        dev = store.get(key) if peripherals.enabled else None
+        return int(dev.value) if dev is not None else None
+    return {
+        "board": peripherals.enabled,
+        "pins": PIN_MAP,
+        "inputs": {"DI0": value(peripherals._in, "di0"), "DI1": value(peripherals._in, "di1")},
+        "outputs": {k.upper(): value(peripherals._out, k) for k in ("do0", "do1", "led0", "led1", "buzzer")},
+        "network": network_interfaces(),
+    }
