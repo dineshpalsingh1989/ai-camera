@@ -1,4 +1,20 @@
 """Self-check for the pure logic: python3 test_app.py"""
+import atexit
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+from unittest.mock import mock_open, patch
+
+# Import a disposable copy: importing app initializes its on-disk training registry.
+# Self-checks must never reset jobs or change data belonging to a running installation.
+_sandbox = tempfile.TemporaryDirectory(prefix="ai-camera-selfcheck-")
+atexit.register(_sandbox.cleanup)
+for _name in ("app.py", "training_service.py", "hardware.py", "monitoring.py", "configuration_backup.py"):
+    shutil.copyfile(Path(__file__).parent / _name, Path(_sandbox.name) / _name)
+sys.path.insert(0, _sandbox.name)
+os.environ["AI_CAMERA_DATA_DIR"] = _sandbox.name
 import app
 
 # line crossing: a step from left to right across a vertical line counts, a step beside it does not
@@ -49,7 +65,10 @@ except ImportError:
 # IRIV board peripherals: disabled off-board (no Hailo, or not a CM5), and every method is a safe no-op
 import hardware
 assert hardware.board_present(False) is False          # no Hailo HAT -> off
-assert hardware.board_present(True) is False            # this dev machine is not a CM5 -> off
+with patch("builtins.open", mock_open(read_data="Raspberry Pi Compute Module 5 Rev 1.0")):
+    assert hardware.board_present(True) is True
+with patch("builtins.open", side_effect=OSError("No device tree")):
+    assert hardware.board_present(True) is False
 p = hardware.Peripherals(False)
 assert p.enabled is False
 p.on_alert("test"); p.set_health(True); p.update_status(["x"]); p.cleanup()  # must not raise when disabled

@@ -4,6 +4,8 @@ Self-hosted AI CCTV dashboard: live cameras, object detection and tracking, zone
 pose and fall detection, face blur, heatmap, motion, alerts with photos and clips, Telegram, analytics,
 and quality inspection (anomaly detection, e.g. egg lines). Monitoring and local training run on your device.
 Roboflow upload/download and cloud training are optional, explicit actions.
+Includes camera-outage/recovery alerts, per-camera alert schedules, activity confirmation,
+opt-in recording retention, and configuration backup/restore. Automated checks gate container releases.
 
 - **Hailo-8 / 8L** (Raspberry Pi 5, CM5) runs detection, pose and faces on the AI chip.
 - **Any PC without Hailo** falls back to CPU (Ultralytics YOLO), slower.
@@ -49,16 +51,26 @@ Add cameras in Settings → Cameras (RTSP brands, USB webcam, HTTP stream, video
 
 ## Run with Docker
 
-A prebuilt multi-arch image (amd64 + arm64) is published to GitHub Packages on every push:
+A prebuilt multi-arch image (amd64 + arm64) is published to GitHub Packages after automated checks
+pass on pushes to `main`, version tags, and manual workflow runs:
 
 ```
 docker run -p 8080:8080 \
+  -v ai-camera-data:/app/data \
   -v ai-camera-events:/app/events -v ai-camera-workspace:/app/ai-workspace \
   ghcr.io/dineshpalsingh1989/ai-camera:latest
 ```
 
 This runs the dashboard with CPU detection. Hailo acceleration needs HailoRT and `/dev/hailo0`
 passed through from the host, so for a Raspberry Pi + Hailo install, use `install.sh` below instead.
+
+The `ai-camera-data` volume preserves login/camera settings, statistics, inspection models and
+collected photos when replacing the container. Events and the reviewed training workspace retain
+their existing volumes. Before upgrading an older container, stop it and copy `/app/settings.json`,
+`/app/stats.json`, `/app/inspect/` and `/app/training/` (when present) into the new data volume,
+preserving these names. Keep the old container until the restored configuration has been verified.
+PC/Pi installs keep their current data locations unless `AI_CAMERA_DATA_DIR` is explicitly set;
+this variable relocates those four items only, not events or the reviewed training workspace.
 
 ## Install on a Raspberry Pi with Hailo
 
@@ -88,6 +100,100 @@ standard detection/pose/face models still use their configured `.hef` files.
 - Filter **Event history** by dates (browser-local time), severity and review status. Open an event to mark
   it confirmed, a false alarm or unreviewed, with a note. These reviews do not automatically label training images.
 - Settings are organized into Cameras, Detection, Recording, Notifications and Login tabs.
+
+Face privacy remains active when AI is paused. If face detection is unavailable or fails while
+privacy is enabled, the live image is hidden. Manual **Record** works even when automatic alert
+clips are disabled; encoder and low-storage failures are reported instead of showing success.
+
+## Unattended monitoring
+
+Save settings after changing any of these controls. Existing installations receive the new defaults
+on their next server start. Cleanup is disabled by default and does not remove existing files until enabled.
+
+| Feature | Settings location | Default |
+| --- | --- | --- |
+| Camera offline/recovery alerts | Notifications → Camera health | Enabled; 60-second outage delay |
+| Activity confirmation | Notifications → Reduce repeated alerts | 2 seconds |
+| Inspection alert grouping | Notifications → Reduce repeated alerts | Enabled; uses Detection's 60-second alert cooldown |
+| Alert schedule | Cameras → select a camera → Alert schedule | Disabled (alerts always active) |
+| Recording cleanup | Recording → Storage retention | Disabled; 30 days when enabled |
+| Free-space reserve | Recording → Storage retention | 1 GiB |
+| Configuration backup/restore | Login → Configuration backup | Manual download and restore |
+
+### Camera offline and recovery alerts
+
+A background check runs every five seconds. It detects disconnected cameras and streams whose
+last frame is at least 15 seconds old, even if the capture connection still claims to be online.
+After the configured outage delay, one **Camera offline** event is recorded. Startup has the same
+grace period so a camera has time to connect. A **Camera recovered** event follows after five seconds
+of healthy checks. Brief recoveries do not repeatedly notify you. Disabled/removed cameras are not checked.
+
+Health events appear in Event history, including its new type filters, and send Telegram text messages
+when a bot token and chat ID are saved. They do not create video clips or trigger the hardware siren.
+They remain enabled outside detection schedules and while AI is paused. Timers reset when the server restarts.
+
+### Per-camera alert schedules
+
+Choose weekdays, a start/end time and an IANA time zone such as `Asia/Singapore`.
+For example, select Monday–Friday and **20:00–06:00** to monitor overnight: Friday's interval
+continues until Saturday at 06:00. The end time is exclusive. Equal start/end times mean the full
+selected calendar day. Time-zone rules include daylight-saving changes; schedules do not depend
+on the server's operating-system time zone. Check the time-zone field when first enabling a schedule;
+older camera configurations start with UTC, while newly added cameras use the browser's time zone.
+
+Outside scheduled hours, automatic detection events, their clips, Telegram notifications and siren
+actions are suppressed. Live video, privacy blur, object/line counting, training collection, manual
+recordings and camera-health alerts remain available. Live tiles show **ALERTS OUTSIDE SCHEDULE**.
+An event clip already recording is allowed to finish.
+
+### Smarter alerts
+
+**Activity confirmation** waits for tracked objects, zone entries and motion to persist before generating
+events. Set it to **0** for immediate alerts. Object tracking tolerates short detection gaps; a gap longer
+than five seconds starts a new track. This is a persistence filter, not a guarantee that every detection
+is correct. Existing fall confirmation, zone dwell times and inspection voting still apply independently.
+
+The existing cooldown suppresses repeated camera/type/label events. **Inspection alert grouping** also
+ignores changing tracked object IDs and defect scores, so consecutive rejected items of the same class
+share a cooldown instead of generating a notification for each new ID. Turn grouping off when individual
+reject alerts matter. Manual recordings and health transitions bypass this cooldown.
+
+### Storage retention
+
+Enable **Automatically delete old event photos and clips**, choose retention days, and set the disk reserve.
+Cleanup runs every minute. It removes expired events, then the oldest remaining events if free space is
+below the reserve. Set days to **0** to use free-space cleanup alone. Active clips and events created in
+the last two minutes are protected. App-named orphan media and abandoned temporary clips older than a day
+are also removed. Cleanup never removes training images, datasets, model files or unrelated media files.
+
+The Recording pane displays free space, the last maintenance time, removed-event count and errors.
+The event-history cap remains approximately 500 entries, independent of the retention setting.
+The reserve also prevents new recordings from starting when insufficient space is available, even with
+cleanup disabled. It cannot guarantee free space if other applications fill the disk, or if only protected
+recordings remain. A manual recording reports this condition as an error.
+
+## Configuration backup and restore
+
+1. Open **Settings → Login → Configuration backup** and download the saved configuration.
+   Save pending settings edits first; the download contains the server's saved configuration.
+2. Keep the JSON file private: it contains camera connection credentials, dashboard login and the Telegram token.
+3. To restore, select the JSON file. The server validates its version, cameras, schedules and collection rules
+   and shows the number of cameras/rules before any settings are changed.
+4. Select **Restore configuration** and confirm replacement. Running training/transfer jobs must finish first.
+   Log in using the restored credentials. Restart the application to reload base AI model paths.
+
+Backups include global settings, camera connections, zones/lines, schedules, inspection settings,
+custom-model path/class configuration, and per-camera automatic training collection rules.
+They exclude recordings, statistics, learned inspection model files, training photos, datasets, model
+weights and the Roboflow connection/API key. Existing training artifacts and Roboflow credentials remain
+on the target installation; activation rollback history is cleared because the configuration was replaced.
+Use the existing dataset/model downloads and filesystem backups for those artifacts. Model paths in a
+configuration backup must exist on the target machine; restore does not download or import weights.
+Backups use version 1 of the `ai-camera-configuration` JSON format and are limited to 5 MB.
+
+Downloads require dashboard authentication and are not cached. Preview is read-only; restore requires
+explicit confirmation. Failed validation never applies settings, and handled storage-write failures
+roll back the training collection configuration before reporting an error.
 
 ## Reviewed training workflow
 
@@ -145,7 +251,35 @@ the [official Roboflow API adapter](https://github.com/roboflow/roboflow-python/
 ```
 python test_app.py
 python -m unittest test_workspace -v
+python -m unittest test_runtime -v
+python -m unittest test_monitoring -v
+python check_frontend.py  # requires Node.js
 ```
+
+The self-check uses a disposable app copy. API/policy tests use temporary directories and simulated
+cameras; they do not change a running installation or send cloud requests. Tests cover offline/recovery
+transitions, overnight/DST schedules, persistence/cooldown rules, safe cleanup, authentication,
+privacy behavior, and backup/restore validation and write failures.
+
+For a browser smoke check, install `requirements-test.txt` in a separate test environment, then run:
+
+```
+python -m playwright install chromium
+python check_dashboard.py
+```
+
+It launches an isolated local server and checks saving settings, schedules, alerts, retention,
+backup download/preview/restore, and mobile controls. `BROWSER_EXECUTABLE` can point to an installed
+Chromium/Edge executable instead. The lightweight test dependencies omit PyTorch/Ultralytics;
+real inference/training and hardware checks remain separate.
+
+### Release checks
+
+`.github/workflows/docker.yml` runs the self-check, runtime/workspace/monitoring tests, JavaScript syntax
+checks and the browser smoke check on pull requests and release triggers. The container publishing job
+depends on successful checks; pull requests never publish an image. Package-write permission is limited
+to the publishing job. CI uses simulated cameras and does not validate a physical Hailo board, RTSP camera,
+Telegram delivery or a production video encoder. The optional real-training check below is not part of CI.
 
 Optional real training smoke check (one epoch on synthetic fixture images, never deployed):
 

@@ -3,6 +3,7 @@ settings.json
 
 # runtime data
 stats.json
+data/
 events/
 inspect/
 training/

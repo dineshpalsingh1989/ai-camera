@@ -4,7 +4,7 @@ set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 sudo apt-get update
-sudo apt-get install -y python3-opencv python3-flask python3-requests python3-numpy python3-yaml ffmpeg
+sudo apt-get install -y python3-opencv python3-flask python3-requests python3-numpy python3-yaml tzdata ffmpeg
 
 python3 -c "import hailo_platform" 2>/dev/null \
   || echo "WARNING: HailoRT not found (Raspberry Pi: sudo apt install hailo-all). Video works, AI stays off."

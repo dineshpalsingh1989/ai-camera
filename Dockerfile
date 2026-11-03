@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 COPY . .
 
 EXPOSE 8080
-# Persist runtime data across restarts by mounting these (settings.json lives in /app):
-VOLUME ["/app/events", "/app/ai-workspace"]
+# Configuration, statistics, inspection models and collected photos share a data volume.
+# Keep the established event/workspace paths so existing named volumes still work.
+ENV AI_CAMERA_DATA_DIR=/app/data
+VOLUME ["/app/data", "/app/events", "/app/ai-workspace"]
 CMD ["python", "app.py"]

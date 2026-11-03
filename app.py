@@ -4,7 +4,7 @@
 Object detection + tracking, zones (intrusion / loitering), line counters, pose + fall detection,
 face detection / privacy blur, heatmap, motion, event snapshots + video clips, Telegram alerts, analytics.
 """
-import atexit, glob, hmac, io, json, os, re, shutil, socket, subprocess, sys, threading, time, uuid, zipfile
+import atexit, glob, hmac, io, json, math, os, re, shutil, socket, subprocess, sys, tempfile, threading, time, uuid, zipfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,14 +15,17 @@ import requests
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
 
 import hardware  # IRIV EdgeAI CM5 peripherals; no-op on any other machine
+from monitoring import Maintenance, alert_key, clean_schedule, scheduled
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-SETTINGS_FILE = os.path.join(BASE, "settings.json")
-STATS_FILE = os.path.join(BASE, "stats.json")
+DATA_DIR = os.path.abspath(os.environ.get("AI_CAMERA_DATA_DIR") or BASE)
+os.makedirs(DATA_DIR, exist_ok=True)
+SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+STATS_FILE = os.path.join(DATA_DIR, "stats.json")
 EVENTS_DIR = os.path.join(BASE, "events")
 EVENTS_FILE = os.path.join(EVENTS_DIR, "events.json")
-INSPECT_DIR = os.path.join(BASE, "inspect")
-TRAIN_DIR = os.path.join(BASE, "training")  # photos collected for labelling on Roboflow
+INSPECT_DIR = os.path.join(DATA_DIR, "inspect")
+TRAIN_DIR = os.path.join(DATA_DIR, "training")  # photos collected for labelling on Roboflow
 os.makedirs(EVENTS_DIR, exist_ok=True)
 MODELS = "/usr/local/hailo/resources/models/hailo8l/"
 FONT = cv2.FONT_HERSHEY_SIMPLEX
@@ -48,6 +51,13 @@ DEFAULTS = {
     "max_fps": 15,
     "alert_classes": ["person", "car", "motorcycle", "dog", "cat"],
     "alert_cooldown": 60,
+    "alert_min_seconds": 2,
+    "group_alerts": True,
+    "offline_alerts": True,
+    "offline_after": 60,
+    "storage_cleanup": False,
+    "retention_days": 30,
+    "min_free_gb": 1.0,
     "custom_classes": ["egg"],  # objects the 80-class model doesn't know
     "custom_model": "yolov8s-worldv2.pt",  # YOLO-World = no training; or a .pt trained on Roboflow / Ultralytics
     "custom_confidence": 0.25,
@@ -77,18 +87,31 @@ def load_settings():
         c.setdefault("zones", [])
         c.setdefault("lines", [])
         c.setdefault("group", "")
+        c["schedule"] = clean_schedule(c.get("schedule", {}))
         c["inspection"] = clean_inspection(c.get("inspection") or {}, COCO + s["custom_classes"])
     return s
 
 
 def save_settings(s):
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(s, f, indent=2)
-    os.chmod(SETTINGS_FILE, 0o600)  # holds the password and Telegram token
+    # Write a private sibling, then replace: failed writes must retain the last good settings.
+    fd, temporary = tempfile.mkstemp(prefix="settings-", suffix=".tmp", dir=os.path.dirname(SETTINGS_FILE))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(s, f, indent=2, allow_nan=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, SETTINGS_FILE)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
 
 
 def num(v, lo, hi, kind=float):
-    return min(max(kind(v), lo), hi)
+    value = kind(v)
+    if not math.isfinite(value):
+        raise ValueError("Numbers must be finite")
+    return min(max(value, lo), hi)
 
 
 def points(v, n_min, n_max):
@@ -129,6 +152,7 @@ def clean_settings(d):
             "name": str(c.get("name") or "Camera")[:40],
             "location": str(c.get("location") or "")[:60],
             "group": str(c.get("group") or "").strip()[:60],
+            "schedule": clean_schedule(c.get("schedule", {})),
             "conn": {k: str(v)[:300] for k, v in (c.get("conn") or {}).items() if k in CONN_KEYS},
             "source": src,
             "enabled": bool(c.get("enabled", True)),
@@ -141,6 +165,13 @@ def clean_settings(d):
             "inspection": clean_inspection(c.get("inspection") or {}, known),
         })
     s["cameras"] = cams
+    if len({c["id"] for c in cams}) != len(cams):
+        raise ValueError("Camera IDs must be unique")
+    for k in ("offline_alerts", "storage_cleanup", "group_alerts"):
+        s[k] = bool(d.get(k, s[k]))
+    for k, lo, hi, kind in (("offline_after", 15, 3600, int), ("retention_days", 0, 3650, int),
+                           ("min_free_gb", 1, 1000, float), ("alert_min_seconds", 0, 60, float)):
+        s[k] = num(d.get(k, s[k]), lo, hi, kind)
     for k in ("detect", "pose", "faces"):
         s["models"][k] = str(d.get("models", {}).get(k) or s["models"][k]).strip()
     s["confidence"] = num(d.get("confidence", s["confidence"]), 0.05, 0.95)
@@ -448,6 +479,8 @@ class Tracker:
             best, best_iou = None, 0.25
             for tid in free:
                 t = self.tracks[tid]
+                if now - t["seen"] > 5:
+                    continue
                 v = iou(t["box"], box) if t["label"] == label else 0
                 if v > best_iou:
                     best, best_iou = tid, v
@@ -532,12 +565,11 @@ def load_events():
         return []
 
 
-events, ev_lock, last_alert = deque(load_events(), maxlen=500), threading.Lock(), {}
+events, ev_lock, last_alert = deque(load_events()), threading.Lock(), {}
 
 
 def save_events():
-    with open(EVENTS_FILE, "w") as f:
-        json.dump(list(events), f)
+    atomic_json(EVENTS_FILE, list(events))
 
 
 def remove_files(ev):
@@ -556,8 +588,11 @@ def notify(text, jpg):
 
     def send():
         try:
-            requests.post(f"https://api.telegram.org/bot{tok}/sendPhoto", data={"chat_id": chat, "caption": text},
-                          files={"photo": ("event.jpg", jpg)}, timeout=15)
+            if jpg is None:
+                requests.post(f"https://api.telegram.org/bot{tok}/sendMessage", data={"chat_id": chat, "text": text}, timeout=15)
+            else:
+                requests.post(f"https://api.telegram.org/bot{tok}/sendPhoto", data={"chat_id": chat, "caption": text},
+                              files={"photo": ("event.jpg", jpg)}, timeout=15)
         except requests.RequestException as e:
             print("Telegram failed:", e)
 
@@ -573,28 +608,53 @@ def sensor_event(signal):
         peripherals.on_alert(signal)  # no camera online, still sound the alarm
 
 
-def add_event(cam, kind, label, jpg, force=False):
+def health_event(cam, kind, label):
+    picture = np.zeros((240, 640, 3), np.uint8)
+    tag(picture, label, 12, 120, (255, 255, 255), .6)
+    add_event(cam, kind, label, cv2.imencode(".jpg", picture)[1].tobytes(), force=True)
+
+
+def add_event(cam, kind, label, jpg, force=False, record_requested=False):
     now = time.time()
-    key = (cam.id, kind, label)
-    if not force and now - last_alert.get(key, 0) < settings["alert_cooldown"]:
+    system_event = kind in {"camera_offline", "camera_recovered"}
+    if not system_event and kind != "manual" and not scheduled(cam.cfg, now):
         return
-    last_alert[key] = now
-    base = f"{cam.id}_{int(now * 1000)}_{kind}"
+    key = (cam.id, kind, alert_key(kind, label, settings["group_alerts"]))
+    with ev_lock:
+        if not force and now - last_alert.get(key, 0) < settings["alert_cooldown"]:
+            return
+        last_alert[key] = now
+        if len(last_alert) > 2000:
+            for old_key, stamp in list(last_alert.items()):
+                if now - stamp > settings["alert_cooldown"]:
+                    last_alert.pop(old_key, None)
+    base = f"{cam.id}_{int(now * 1000)}_{kind}_{uuid.uuid4().hex[:8]}"
     with open(os.path.join(EVENTS_DIR, base + ".jpg"), "wb") as f:
         f.write(jpg)
     ev = {"id": base, "time": now, "camera": cam.name, "camera_id": cam.id, "type": kind, "label": label,
           "image": base + ".jpg"}
     with ev_lock:
-        if len(events) == events.maxlen:
-            remove_files(events[0])
+        if len(events) >= 500:
+            active = {clip["base"] for c in list(cameras.values()) if (clip := c.clip)}
+            oldest = next((event for event in events if event["id"] not in active), None)
+            if oldest is not None:
+                remove_files(oldest)
+                events.remove(oldest)
         events.append(ev)
         save_events()
     bump("kinds", kind)
+    if system_event:
+        notify(f"{cam.name}: {label}", None)
+        return
     if kind not in QUIET:
         notify(f"{cam.name}: {label}", jpg)
         peripherals.on_alert(label)  # buzzer + siren/relay on the IRIV board; no-op elsewhere
-        if settings["record_clips"] and cam.clip is None and shutil.disk_usage(EVENTS_DIR).free > 1 << 30:
-            cam.start_clip(base, ev)
+        if (settings["record_clips"] or record_requested) and cam.clip is None:
+            if shutil.disk_usage(EVENTS_DIR).free <= settings["min_free_gb"] * 1024**3:
+                if record_requested:
+                    raise ValueError(f"Not enough disk space to record (at least {settings['min_free_gb']:g} GiB free required)")
+            elif not cam.start_clip(base, ev) and record_requested:
+                raise ValueError("Could not start recording. Check that an H.264 encoder is available")
 
 
 # ---------------------------------------------------------------- cameras
@@ -616,9 +676,11 @@ class Camera:
         self.collecting = None  # [saved, wanted] while saving training photos
         self.online, self.motion, self.fps, self.fs = False, False, 0.0, 0.5
         self.last_frame, self.last_connected, self.reconnects = None, None, 0
+        self.motion_since = None
         self.counts, self.zone_counts, self.fall_since = {}, {}, None
         self.last_dets = []  # most recent object detections, reused as suggested boxes when capturing a training photo
         self.prebuf = deque(maxlen=45)  # ~3 s of JPEGs so clips start before the event
+        self.clip_lock = threading.RLock()
         self.tracker = Tracker()
         self.learning, self.insp_hist, self.insp_flagged = None, {}, set()
         try:
@@ -663,7 +725,7 @@ class Camera:
     def _show(self, f):
         """Live view frame: the newest camera picture with the AI's latest drawings pasted on top."""
         ov = self.overlay
-        if ov is None or ov[0].shape != f.shape:
+        if self.cfg["features"]["blur_faces"] or ov is None or ov[0].shape != f.shape:
             return  # no AI frame yet, or privacy blur is on: the AI loop provides the view itself
         img, mask = ov
         f = f.copy()
@@ -671,20 +733,37 @@ class Camera:
         self.jpeg = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
 
     def start_clip(self, base, ev):
+        with self.clip_lock:
+            if self.clip is not None or self.raw is None:
+                return False
+            return self._start_clip(base, ev)
+
+    def _start_clip(self, base, ev):
         h, w = self.raw.shape[:2]
         tmp = os.path.join(EVENTS_DIR, base + ".tmp.mp4")
         writer = cv2.VideoWriter(tmp, cv2.VideoWriter_fourcc(*"avc1"), max(1.0, min(self.fps, 30.0)), (w, h))
         if not writer.isOpened():
-            return
-        for j in self.prebuf:
+            writer.release()
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            return False
+        for j in list(self.prebuf):
             fr = cv2.imdecode(np.frombuffer(j, np.uint8), cv2.IMREAD_COLOR)
-            writer.write(cv2.resize(fr, (w, h)) if fr.shape[:2] != (h, w) else fr)
+            if fr is not None:
+                writer.write(cv2.resize(fr, (w, h)) if fr.shape[:2] != (h, w) else fr)
         self.clip = {"writer": writer, "size": (w, h), "tmp": tmp, "base": base, "ev": ev,
                      "end": time.time() + settings["clip_seconds"]}
+        return True
 
     def _write_clip(self, f):
+        with self.clip_lock:
+            if self.clip is not None:
+                self._write_clip_locked(f)
+
+    def _write_clip_locked(self, f):
         c = self.clip
-        c["writer"].write(cv2.resize(f, c["size"]) if f.shape[1::-1] != c["size"] else f)
+        if f is not None:
+            c["writer"].write(cv2.resize(f, c["size"]) if f.shape[1::-1] != c["size"] else f)
         if time.time() >= c["end"] or not self.running:
             c["writer"].release()
             self.clip = None
@@ -709,12 +788,16 @@ class Camera:
             if self.paused:
                 self.raw, pending, self.counts, self.zone_counts = f.copy(), [], {}, {}
                 self.fs = max(0.45, f.shape[1] / 1400)
+                if cfg["features"]["blur_faces"]:
+                    self._draw_faces(f, cfg["features"])
                 tag(f, "AI PAUSED", 8, 30, (90, 90, 90), self.fs)
             else:
                 try:
                     pending = self._analyze(f, s, cfg)
                 except Exception as e:  # keep streaming even if a model fails
                     print(f"[{self.id}] AI error: {e}")
+                    if cfg["features"]["blur_faces"]:
+                        f[:] = 0
                     pending = []
 
             mask = bg.apply(cv2.resize(f, (320, max(1, 320 * f.shape[0] // f.shape[1]))))
@@ -722,8 +805,16 @@ class Camera:
             self.motion = bool(s["motion_enabled"] and not warmup and not self.paused
                                and cv2.countNonZero(mask) * 100 / mask.size >= s["motion_sensitivity"])
             if self.motion:
-                pending.append(("motion", "motion"))
+                self.motion_since = self.motion_since or time.time()
+                if time.time() - self.motion_since >= s["alert_min_seconds"]:
+                    pending.append(("motion", "motion"))
                 tag(f, "MOTION", 8, 30, (0, 120, 255), self.fs)
+            else:
+                self.motion_since = None
+            if not scheduled(cfg):
+                self.insp_flagged.clear()
+                for track in self.tracker.tracks.values():
+                    track["done"].clear()
             cv2.putText(f, f"{self.name}  {time.strftime('%Y-%m-%d %H:%M:%S')}", (8, f.shape[0] - 10),
                         FONT, self.fs, (255, 255, 255), 1, cv2.LINE_AA)
 
@@ -746,7 +837,32 @@ class Camera:
             last = now
             time.sleep(max(0, 1 / s["max_fps"] - (now - t0)))
         if self.clip:
-            self._write_clip(self.raw)
+            self._write_clip(None)  # finalize without appending an unblurred raw frame
+
+    def _draw_faces(self, f, feat):
+        if not (feat["faces"] or feat["blur_faces"]):
+            return []
+        try:
+            if ai is None:
+                raise RuntimeError("Face detector unavailable")
+            faces = ai.faces(f)
+            h, w = f.shape[:2]
+            for x1, y1, x2, y2 in faces:
+                x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                if feat["blur_faces"]:
+                    roi = f[y1:y2, x1:x2]
+                    f[y1:y2, x1:x2] = cv2.resize(cv2.resize(roi, (8, 8)), (x2 - x1, y2 - y1), interpolation=cv2.INTER_NEAREST)
+                else:
+                    cv2.rectangle(f, (x1, y1), (x2, y2), (255, 200, 0), 2)
+            return faces
+        except Exception:
+            if not feat["blur_faces"]:
+                raise
+            f[:] = 0  # privacy must not fail open when face inference is unavailable
+            tag(f, "PRIVACY: FACE DETECTOR UNAVAILABLE", 8, 60, (255, 255, 255), self.fs)
+            return []
 
     def _analyze(self, f, s, cfg):
         """Run every enabled AI feature on frame f, draw the results on it, return events to raise."""
@@ -756,20 +872,10 @@ class Camera:
         feat, pending, now = cfg["features"], [], time.time()
         if self.heat is None or self.heat.shape != (h // 8, w // 8):
             self.heat = np.zeros((h // 8, w // 8), np.float32)
+        # faces first so the privacy blur is applied before anything is drawn on top
+        faces = self._draw_faces(f, feat)
         if not ai:
             return pending
-
-        # faces first so the privacy blur is applied before anything is drawn on top
-        faces = ai.faces(f) if feat["faces"] or feat["blur_faces"] else []
-        for x1, y1, x2, y2 in faces:
-            x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
-            if x2 <= x1 or y2 <= y1:
-                continue
-            if feat["blur_faces"]:
-                roi = f[y1:y2, x1:x2]
-                f[y1:y2, x1:x2] = cv2.resize(cv2.resize(roi, (8, 8)), (x2 - x1, y2 - y1), interpolation=cv2.INTER_NEAREST)
-            else:
-                cv2.rectangle(f, (x1, y1), (x2, y2), (255, 200, 0), 2)
 
         # heatmap of where things stand
         self.heat *= 0.999
@@ -795,28 +901,34 @@ class Camera:
         except Exception:
             pass  # collection must never interrupt monitoring; library capacity is shown in Training
         tracked = self.tracker.update(dets)
+        now = time.time()
         for tid, t, new in tracked:
             label, (x1, y1, x2, y2), foot = t["label"], t["box"], t["trail"][-1]
             counts[label] = counts.get(label, 0) + 1
             self.heat[min(foot[1] // 8, h // 8 - 1), min(foot[0] // 8, w // 8 - 1)] += 1
             if new:
                 bump("unique", label)
-                if label in s["alert_classes"]:
-                    pending.append(("object", label))
+            if (label in s["alert_classes"] and "object" not in t["done"]
+                    and now - t["first"] >= s["alert_min_seconds"] and scheduled(cfg, now)):
+                t["done"].add("object")
+                pending.append(("object", label))
             for z, poly in zones:
                 if z["classes"] and label not in z["classes"]:
                     continue
                 if cv2.pointPolygonTest(poly, (float(foot[0]), float(foot[1])), False) >= 0:
                     zone_counts[z["name"]] += 1
                     since = t["zones"].setdefault(z["name"], now)
-                    if ("in", z["name"]) not in t["done"]:
+                    if (("in", z["name"]) not in t["done"] and now - since >= s["alert_min_seconds"]
+                            and scheduled(cfg, now)):
                         t["done"].add(("in", z["name"]))
                         pending.append(("intrusion", f"{label} entered {z['name']}"))
-                    if z["dwell"] and now - since >= z["dwell"] and ("dwell", z["name"]) not in t["done"]:
+                    if z["dwell"] and now - since >= z["dwell"] and ("dwell", z["name"]) not in t["done"] and scheduled(cfg, now):
                         t["done"].add(("dwell", z["name"]))
                         pending.append(("loitering", f"{label} in {z['name']} for {z['dwell']}s"))
                 else:
                     t["zones"].pop(z["name"], None)
+                    t["done"].discard(("in", z["name"]))
+                    t["done"].discard(("dwell", z["name"]))
             if len(t["trail"]) >= 2:
                 for ln, (a, b) in lines:
                     if (not ln["classes"] or label in ln["classes"]) and crossed(t["trail"][-2], foot, a, b):
@@ -985,16 +1097,19 @@ def sync_cameras():
 # ---------------------------------------------------------------- web
 
 app = Flask(__name__)
-from training_service import register_training
+from training_service import register_training, atomic_json
 training_service = register_training(app, globals())
+maintenance = Maintenance(globals())
+from configuration_backup import register_backup
+register_backup(app, globals())
 
 
 @app.before_request
 def require_login():
     a = request.authorization
-    if not (a and hmac.compare_digest(a.username or "", settings["username"])
-            and hmac.compare_digest(a.password or "", settings["password"])):
-        return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="AI Camera"'})
+    if not (a and a.type == "basic" and hmac.compare_digest((a.username or "").encode("utf-8"), settings["username"].encode("utf-8"))
+            and hmac.compare_digest((a.password or "").encode("utf-8"), settings["password"].encode("utf-8"))):
+        return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="AI Camera", charset="UTF-8"'})
 
 
 @app.route("/")
@@ -1096,11 +1211,15 @@ def snapshot(cid):
 @app.route("/api/record/<cid>", methods=["POST"])
 def record(cid):
     cam = cameras.get(cid) or abort(404)
-    if cam.jpeg is None:
+    if cam.jpeg is None or cam.raw is None:
         return jsonify(error="Camera has no picture yet"), 409
-    if cam.clip:
-        return jsonify(error="Already recording"), 409
-    add_event(cam, "manual", "manual recording", cam.jpeg, force=True)
+    with cam.clip_lock:
+        if cam.clip:
+            return jsonify(error="Already recording"), 409
+        try:
+            add_event(cam, "manual", "manual recording", cam.jpeg, force=True, record_requested=True)
+        except (ValueError, OSError, cv2.error) as e:
+            return jsonify(error=str(e)), 503
     return jsonify(ok=True)
 
 
@@ -1140,10 +1259,11 @@ def status():
     with stats_lock:
         st = json.loads(json.dumps(stats))
     return jsonify(ai_ok=ai is not None, ai_backend=ai.label if ai else "", ai_error=ai_error, stats=st,
+                   storage=maintenance.storage,
                    custom_model=active_model_name(), custom_classes=settings["custom_classes"], cameras=[
         {"id": c.id, "name": c.name, "online": c.online, "fps": round(c.fps, 1), "motion": c.motion,
          "group": c.cfg.get("group", ""), "last_frame": c.last_frame, "last_connected": c.last_connected,
-         "reconnects": c.reconnects,
+         "reconnects": c.reconnects, "alerts_armed": scheduled(c.cfg),
          "recording": c.clip is not None, "counts": c.counts, "zones": c.zone_counts,
          "features": c.cfg["features"], "paused": c.paused,
          "inspection": {**c.insp, "enabled": c.cfg["inspection"]["enabled"],
@@ -1175,7 +1295,7 @@ def api_events():
 
 
 def event_severity(event):
-    return "high" if event["type"] in {"fall", "intrusion"} else "medium" if event["type"] in {"anomaly", "loitering"} else "low"
+    return "high" if event["type"] in {"fall", "intrusion", "camera_offline"} else "medium" if event["type"] in {"anomaly", "loitering"} else "low"
 
 
 @app.route("/api/events/<eid>/review", methods=["POST"])
@@ -1219,8 +1339,11 @@ def api_settings():
             new = clean_settings(request.get_json(force=True))
         except (TypeError, ValueError, KeyError, IndexError, AttributeError) as e:
             return jsonify(error=f"Invalid settings: {e}"), 400
+        try:
+            save_settings(new)
+        except OSError:
+            return jsonify(error="Could not save settings. Check storage space and permissions"), 503
         settings = new
-        save_settings(settings)
         if ai is None:
             start_ai()
         sync_cameras()
@@ -1313,4 +1436,5 @@ elif __name__ == "__main__":
     threading.Thread(target=hardware.status_loop, args=(peripherals, cameras), daemon=True).start()
     sync_cameras()
     threading.Thread(target=stats_saver, daemon=True).start()
+    threading.Thread(target=maintenance.run, daemon=True).start()
     app.run(host="0.0.0.0", port=8080, threaded=True)

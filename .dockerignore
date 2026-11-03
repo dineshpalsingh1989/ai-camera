@@ -13,6 +13,7 @@ weights/
 *.pt
 settings.json
 stats.json
+data/
 docs/
 Dockerfile
 .dockerignore

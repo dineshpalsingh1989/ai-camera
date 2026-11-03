@@ -349,7 +349,7 @@
     <div class="row filter-bar" style="margin-bottom:16px">
       <select id="f-cam" aria-label="Filter by camera"><option value="">All cameras</option></select>
       <select id="f-type" aria-label="Filter by event type"><option value="">All types</option><option value="object">Object</option><option value="intrusion">Intrusion</option>
-        <option value="loitering">Loitering</option><option value="fall">Fall</option><option value="motion">Motion</option><option value="manual">Manual</option><option value="anomaly">Anomaly (inspection)</option></select>
+        <option value="loitering">Loitering</option><option value="fall">Fall</option><option value="motion">Motion</option><option value="manual">Manual</option><option value="anomaly">Anomaly (inspection)</option><option value="camera_offline">Camera offline</option><option value="camera_recovered">Camera recovered</option></select>
       <button class="btn" id="refresh">Refresh</button><span class="spacer"></span>
       <button class="btn danger" id="clear">Delete all events</button>
     </div>
@@ -416,6 +416,15 @@
           <label>AI features on this camera
             <button class="btn" type="button" id="egg-preset" title="Turns on everything an egg line needs">🥚 Egg inspection preset</button></label>
           <div class="row" id="c-features"></div>
+          <h3>Alert schedule</h3>
+          <label class="inline"><input type="checkbox" id="schedule-enabled"> Only generate automatic alerts during these hours</label>
+          <div id="schedule-days" class="row"></div>
+          <div class="two">
+            <div><label for="schedule-start">Start</label><input type="time" id="schedule-start"></div>
+            <div><label for="schedule-end">End</label><input type="time" id="schedule-end"></div>
+          </div>
+          <label for="schedule-timezone">Time zone</label><input id="schedule-timezone" placeholder="Asia/Singapore">
+          <small>Overnight hours belong to the starting day. Equal start/end means the full selected day. Live video, counting, manual recordings and camera-health alerts stay available.</small>
           <small id="preset-out"></small>
           <label>Zones &amp; lines — draw on the picture</label>
           <div class="row" style="margin-bottom:8px">
@@ -496,6 +505,12 @@
           <input type="number" id="motion_sensitivity" min="0.1" max="50" step="0.1">
           <label class="inline"><input type="checkbox" id="record_clips"> Record a video clip for every alert (not motion)</label>
           <label>Clip length (seconds, includes 3 s before the alert)</label><input type="number" id="clip_seconds" min="3" max="120">
+          <h3>Storage retention</h3>
+          <label class="inline"><input type="checkbox" id="storage_cleanup"> Automatically delete old event photos and clips</label>
+          <label for="retention_days">Keep events for days (0 = no age limit)</label><input type="number" id="retention_days" min="0" max="3650">
+          <label for="min_free_gb">Reserve free disk space (GiB)</label><input type="number" id="min_free_gb" min="1" max="1000" step="0.1">
+          <small>When enabled, cleanup runs every minute and removes oldest events to maintain the reserve. Active recordings and events less than two minutes old are protected. Training data is never removed.</small>
+          <p id="storage-status" class="hint"></p>
         </div>
         <div class="card hidden" data-settings-pane="notifications">
           <h2>Telegram alerts <button class="btn" id="tg-test">Send test</button></h2>
@@ -503,11 +518,27 @@
           <label>Bot token <small id="tg-set"></small></label><input type="password" id="telegram_token" autocomplete="off" placeholder="leave blank to keep">
           <label>Chat ID</label><input type="text" id="telegram_chat_id">
           <small id="tg-out"></small>
+          <h3>Camera health</h3>
+          <label class="inline"><input type="checkbox" id="offline_alerts"> Alert when a camera disconnects or stops sending frames</label>
+          <label for="offline_after">Offline delay (seconds)</label><input type="number" id="offline_after" min="15" max="3600">
+          <small>One alert per outage, followed by a recovery message after five seconds of fresh frames. Health alerts also appear in Event history and ignore alert schedules.</small>
+          <h3>Reduce repeated alerts</h3>
+          <label for="alert_min_seconds">Confirm object, intrusion and motion activity for (seconds)</label><input type="number" id="alert_min_seconds" min="0" max="60" step="0.5">
+          <label class="inline"><input type="checkbox" id="group_alerts"> Group repeated inspection alerts regardless of object ID and score</label>
+          <small>Uses the alert cooldown in Detection. Set confirmation to 0 for immediate alerts. Fall detection and inspection voting retain their own confirmation rules.</small>
         </div>
         <div class="card hidden" data-settings-pane="login">
           <h2>Login</h2>
           <label>Username</label><input type="text" id="username">
           <label>New password (leave blank to keep)</label><input type="password" id="password" autocomplete="new-password">
+        </div>
+        <div class="card hidden" data-settings-pane="login">
+          <h2>Configuration backup</h2>
+          <p class="hint">Backups include saved camera credentials, dashboard login and Telegram token. Keep the downloaded file private. Recordings, datasets, model files and Roboflow credentials are not included.</p>
+          <a class="btn" href="/api/backup" download>Download saved configuration</a>
+          <label for="backup-file">Restore a configuration backup</label><input type="file" id="backup-file" accept=".json,application/json">
+          <p id="backup-preview" class="hint">Select a backup to validate and preview it before replacing settings.</p>
+          <button class="btn danger" id="restore-backup" disabled>Restore configuration</button>
         </div>
       </div>
     </div>
@@ -790,6 +821,7 @@ async function pollStatus() {
     pb.textContent = c.paused ? 'Resume AI' : 'Pause AI'; pb.classList.toggle('on', c.paused);
     pb.setAttribute('aria-pressed', String(c.paused));
     setHTML(t.querySelector('.badges'), (c.paused ? '<span class="chip paused">AI PAUSED</span>' : '') +
+      (c.alerts_armed === false ? '<span class="chip">ALERTS OUTSIDE SCHEDULE</span>' : '') +
       (c.motion ? '<span class="chip motion">MOTION</span>' : '') +
       (ins.enabled ? `<span class="chip insp ${ins.severity || ''}">Inspect: ${ins.score != null ? ins.severity.toUpperCase() + ' ' + ins.score.toFixed(2) : esc(ins.state)}</span>` : '') +
       Object.entries(c.features).filter(([k, v]) => v && !['trails', 'objects', 'smooth_view'].includes(k)).map(([k]) => `<span class="chip ai">${FEATURE_NAMES[k].split(' ')[0]}${k === 'blur_faces' ? ' faces' : ''}</span>`).join(''));
@@ -798,6 +830,9 @@ async function pollStatus() {
   });
   if (!$('#settings').classList.contains('hidden')) updateInspectionState();
   const st = ST.stats;
+  if (ST.storage) $('#storage-status').textContent = ST.storage.last_run
+    ? `${ST.storage.free_gb} GiB free. Last cleanup: ${new Date(ST.storage.last_run*1000).toLocaleTimeString()}; ${ST.storage.removed} events removed. ${ST.storage.error || ''}`
+    : 'Storage maintenance starts with the server.';
   $('#k-online').textContent = `${ST.cameras.filter(c => c.online).length} / ${ST.cameras.length}`;
   const online = ST.cameras.filter(c => c.online).length;
   $('#online-note').textContent = !ST.cameras.length ? 'No cameras enabled' : online === ST.cameras.length ? 'All cameras connected' : `${ST.cameras.length - online} camera${ST.cameras.length - online === 1 ? '' : 's'} offline`;
@@ -923,6 +958,11 @@ function renderEditor() {
   $('#cam-editor').classList.toggle('hidden', !cam());
   if (!cam()) return;
   const c = cam();
+  c.schedule ||= {enabled:false, days:[0,1,2,3,4,5,6], start:'18:00', end:'08:00', timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'};
+  $('#schedule-enabled').checked = c.schedule.enabled;
+  ['start','end','timezone'].forEach(k => $('#schedule-'+k).value = c.schedule[k]);
+  $('#schedule-days').innerHTML = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,i) => `<label class="inline"><input type="checkbox" data-day="${i}" ${c.schedule.days.includes(i)?'checked':''}>${day}</label>`).join('');
+  $$('#schedule-days input').forEach(el => el.onchange = () => c.schedule.days = $$('#schedule-days input:checked').map(input => +input.dataset.day));
   c.conn = c.conn && c.conn.type ? c.conn : guessConn(c.source);
   $('#c-name').value = c.name; $('#c-location').value = c.location || ''; $('#c-group').value = c.group || ''; $('#c-enabled').checked = c.enabled;
   $$('.conn [data-k]').forEach(i => i.value = c.conn[i.dataset.k] ?? '');
@@ -943,6 +983,8 @@ $('#c-name').oninput = e => { cam().name = e.target.value; renderCamList(); };
 $('#c-location').oninput = e => cam().location = e.target.value;
 $('#c-group').oninput = e => cam().group = e.target.value;
 $('#c-enabled').onchange = e => { cam().enabled = e.target.checked; renderCamList(); };
+$('#schedule-enabled').onchange = e => cam().schedule.enabled = e.target.checked;
+['start','end','timezone'].forEach(k => $('#schedule-'+k).onchange = e => cam().schedule[k] = e.target.value);
 $('#add-cam').onclick = () => {
   S.cameras.push({ id: '', name: `Camera ${S.cameras.length + 1}`, location: '', source: '', enabled: true,
     conn: { type: 'ip', brand: 'tapo', port: 554, stream: 'main' },
@@ -1190,6 +1232,8 @@ $('#t-clear').onclick = async () => {
 
 // ---------- settings: global ----------
 function renderGlobal() {
+  for (const k of ['retention_days','min_free_gb','offline_after','alert_min_seconds']) $('#'+k).value = S[k];
+  for (const k of ['storage_cleanup','offline_alerts','group_alerts']) $('#'+k).checked = S[k];
   for (const k of ['confidence', 'max_fps', 'alert_cooldown', 'motion_sensitivity', 'clip_seconds', 'telegram_chat_id', 'username']) $('#' + k).value = S[k];
   for (const k of ['motion_enabled', 'record_clips']) $('#' + k).checked = S[k];
   for (const k of ['detect', 'pose', 'faces']) $('#m-' + k).value = S.models[k];
@@ -1217,6 +1261,9 @@ $('#tg-test').onclick = async () => {
 $('#save').onclick = async () => {
   if (drawMode) setDraw(null);
   const body = {
+    retention_days:+$('#retention_days').value, min_free_gb:+$('#min_free_gb').value,
+    storage_cleanup:$('#storage_cleanup').checked, offline_alerts:$('#offline_alerts').checked,
+    offline_after:+$('#offline_after').value, alert_min_seconds:+$('#alert_min_seconds').value, group_alerts:$('#group_alerts').checked,
     cameras: S.cameras, models: { detect: $('#m-detect').value, pose: $('#m-pose').value, faces: $('#m-faces').value },
     confidence: +$('#confidence').value, max_fps: +$('#max_fps').value, alert_cooldown: +$('#alert_cooldown').value,
     alert_classes: $$('#classes input:checked').map(i => i.value),
@@ -1241,6 +1288,28 @@ $('#save').onclick = async () => {
 };
 
 let dashboardStarted = false;
+let configurationBackup = null;
+$('#backup-file').onchange = async e => {
+  configurationBackup = null; $('#restore-backup').disabled = true;
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    if (file.size > 5*1024*1024) throw new Error('Configuration backups must be smaller than 5 MB');
+    const backup = JSON.parse(await file.text());
+    const preview = await api('/api/backup/preview', {json:{backup}});
+    $('#backup-preview').textContent = `${preview.cameras} cameras and ${preview.collection_rules} collection rules. ${preview.message}`;
+    configurationBackup = backup; $('#restore-backup').disabled = false;
+  } catch (err) { $('#backup-preview').textContent = err.message; }
+};
+$('#restore-backup').onclick = async () => {
+  if (!configurationBackup || !confirm('Replace saved settings and login with this backup? Keep a current backup before continuing.')) return;
+  $('#restore-backup').disabled = true;
+  try {
+    const result = await api('/api/backup/restore', {json:{backup:configurationBackup,confirm:true}});
+    $('#backup-preview').textContent = result.message;
+    configurationBackup = null;
+    alert(result.message); location.reload();
+  } catch (err) { $('#backup-preview').textContent = err.message; $('#restore-backup').disabled = false; }
+};
 async function initializeDashboard() {
   $('#retry-connection').disabled = true;
   try {
