@@ -45,6 +45,22 @@ try:
     raise AssertionError("one-point line accepted")
 except ValueError:
     pass
+
+# gates: a drawn rectangle with an optional calibrated reference patch
+s = app.clean_settings({"cameras": [{"source": "0", "gates": [
+    {"points": [[0.1, 0.1], [0.4, 0.4]], "threshold": 5, "ref": [1] * 999},            # bad threshold + wrong-size ref
+    {"points": [[0, 0], [1, 1]], "ref": [1.0] * (app.GATE_PATCH * app.GATE_PATCH)}]}]})
+assert s["cameras"][0]["gates"][0]["threshold"] == 0.95 and s["cameras"][0]["gates"][0]["ref"] is None
+assert s["cameras"][0]["gates"][1]["ref"] == [1.0] * (app.GATE_PATCH * app.GATE_PATCH)
+# an unchanged patch matches its own reference almost perfectly; a blanked-out patch (gate moved away) does not
+raw = app.np.random.default_rng(0).integers(0, 255, (200, 200, 3), app.np.uint8)
+gate_crop = app.gate_patch(raw, [[0.1, 0.1], [0.6, 0.6]])
+ref = gate_crop.astype(app.np.float32)
+same_score = app.cv2.matchTemplate(gate_crop.astype(app.np.float32), ref, app.cv2.TM_CCOEFF_NORMED)[0, 0]
+changed = app.gate_patch(app.np.zeros_like(raw), [[0.1, 0.1], [0.6, 0.6]])
+diff_score = app.cv2.matchTemplate(changed.astype(app.np.float32), ref, app.cv2.TM_CCOEFF_NORMED)[0, 0]
+assert same_score > 0.99 > 0.6 > diff_score
+
 assert app.clean_inspection({"votes": 9, "window": 3}, app.COCO)["votes"] == 3  # can't need more votes than frames
 s = app.clean_settings({"custom_model": "yolov8s-worldv2.pt",  # a "world" model lowercases class names
                         "custom_classes": ["Egg", "egg", " "], "alert_classes": ["egg", "unicorn"],

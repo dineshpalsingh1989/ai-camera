@@ -349,7 +349,7 @@
     <div class="row filter-bar" style="margin-bottom:16px">
       <select id="f-cam" aria-label="Filter by camera"><option value="">All cameras</option></select>
       <select id="f-type" aria-label="Filter by event type"><option value="">All types</option><option value="object">Object</option><option value="intrusion">Intrusion</option>
-        <option value="loitering">Loitering</option><option value="fall">Fall</option><option value="motion">Motion</option><option value="manual">Manual</option><option value="anomaly">Anomaly (inspection)</option><option value="camera_offline">Camera offline</option><option value="camera_recovered">Camera recovered</option></select>
+        <option value="loitering">Loitering</option><option value="fall">Fall</option><option value="motion">Motion</option><option value="manual">Manual</option><option value="anomaly">Anomaly (inspection)</option><option value="camera_offline">Camera offline</option><option value="camera_recovered">Camera recovered</option><option value="gate">Gate</option></select>
       <button class="btn" id="refresh">Refresh</button><span class="spacer"></span>
       <button class="btn danger" id="clear">Delete all events</button>
     </div>
@@ -426,14 +426,18 @@
           <label for="schedule-timezone">Time zone</label><input id="schedule-timezone" placeholder="Asia/Singapore">
           <small>Overnight hours belong to the starting day. Equal start/end means the full selected day. Live video, counting, manual recordings and camera-health alerts stay available.</small>
           <small id="preset-out"></small>
-          <label>Zones &amp; lines — draw on the picture</label>
+          <label>Zones, lines &amp; gates — draw on the picture</label>
           <div class="row" style="margin-bottom:8px">
             <button class="btn" id="draw-zone">Draw zone</button><button class="btn" id="draw-line">Draw line</button>
+            <button class="btn" id="draw-gate">Draw gate</button>
             <button class="btn primary hidden" id="draw-done">Finish zone</button><button class="btn hidden" id="draw-cancel">Cancel</button>
             <small id="draw-hint"></small><span class="spacer"></span><button class="btn danger" id="c-delete">Delete camera</button>
           </div>
+          <small>A gate watches a drawn rectangle for a look change (e.g. a gate/door opening) instead of tracking objects.
+            After drawing it and saving, click Calibrate while it's closed, then save again.</small>
           <div class="canvas-wrap"><canvas id="editor-canvas" width="1280" height="720"></canvas></div>
           <div id="shapes"></div>
+          <div id="gates"></div>
           <div class="insp-box">
             <h3>Quality inspection · anomaly detection</h3>
             <p class="hint" style="margin-top:0">Learns what a <b>good</b> product looks like, then flags anything that looks different and shows a heatmap of where. No labelling and no bad samples needed.</p>
@@ -826,7 +830,8 @@ async function pollStatus() {
       (ins.enabled ? `<span class="chip insp ${ins.severity || ''}">Inspect: ${ins.score != null ? ins.severity.toUpperCase() + ' ' + ins.score.toFixed(2) : esc(ins.state)}</span>` : '') +
       Object.entries(c.features).filter(([k, v]) => v && !['trails', 'objects', 'smooth_view'].includes(k)).map(([k]) => `<span class="chip ai">${FEATURE_NAMES[k].split(' ')[0]}${k === 'blur_faces' ? ' faces' : ''}</span>`).join(''));
     setHTML(t.querySelector('.counts'), (chips(c.counts) || '<small>No objects</small>') +
-      Object.entries(c.zones).map(([z, n]) => `<span class="chip zone">${esc(z)}: ${n}</span>`).join(''));
+      Object.entries(c.zones).map(([z, n]) => `<span class="chip zone">${esc(z)}: ${n}</span>`).join('') +
+      (c.gates || []).map(g => `<span class="chip">${esc(g.name)}: ${g.state.toUpperCase()}</span>`).join(''));
   });
   if (!$('#settings').classList.contains('hidden')) updateInspectionState();
   const st = ST.stats;
@@ -958,6 +963,7 @@ function renderEditor() {
   $('#cam-editor').classList.toggle('hidden', !cam());
   if (!cam()) return;
   const c = cam();
+  c.gates ||= [];
   c.schedule ||= {enabled:false, days:[0,1,2,3,4,5,6], start:'18:00', end:'08:00', timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'};
   $('#schedule-enabled').checked = c.schedule.enabled;
   ['start','end','timezone'].forEach(k => $('#schedule-'+k).value = c.schedule[k]);
@@ -988,7 +994,7 @@ $('#schedule-enabled').onchange = e => cam().schedule.enabled = e.target.checked
 $('#add-cam').onclick = () => {
   S.cameras.push({ id: '', name: `Camera ${S.cameras.length + 1}`, location: '', source: '', enabled: true,
     conn: { type: 'ip', brand: 'tapo', port: 554, stream: 'main' },
-    features: { smooth_view: true, objects: true, custom: false, pose: false, faces: false, blur_faces: false, heatmap: false, trails: true }, zones: [], lines: [] });
+    features: { smooth_view: true, objects: true, custom: false, pose: false, faces: false, blur_faces: false, heatmap: false, trails: true }, zones: [], lines: [], gates: [] });
   editIdx = S.cameras.length - 1; renderEditor(); $('#c-name').select();
 };
 
@@ -1079,12 +1085,13 @@ function setDraw(mode) {
   $('#draw-done').classList.toggle('hidden', mode !== 'zone');
   $('#draw-cancel').classList.toggle('hidden', !mode);
   $('#draw-hint').textContent = mode === 'zone' ? 'Click corners of the area, then Finish zone' : mode === 'line' ? 'Click the start and end of the line'
-    : mode === 'roi' ? 'Click two opposite corners of the inspection area' : '';
+    : mode === 'roi' ? 'Click two opposite corners of the inspection area' : mode === 'gate' ? 'Click two opposite corners of the gate' : '';
   drawCanvas();
 }
 $('#draw-roi').onclick = () => { setDraw('roi'); canvas.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#draw-zone').onclick = () => setDraw('zone');
 $('#draw-line').onclick = () => setDraw('line');
+$('#draw-gate').onclick = () => setDraw('gate');
 $('#draw-cancel').onclick = () => setDraw(null);
 $('#draw-done').onclick = () => {
   if (draft.length < 3) return alert('A zone needs at least 3 points');
@@ -1101,6 +1108,9 @@ canvas.onclick = e => {
   } else if (drawMode === 'roi' && draft.length === 2) {
     cam().inspection.roi = draft;
     setDraw(null); renderInspection();
+  } else if (drawMode === 'gate' && draft.length === 2) {
+    cam().gates.push({ name: `Gate ${cam().gates.length + 1}`, points: draft, threshold: 0.6, ref: null });
+    setDraw(null); renderShapes();
   } else drawCanvas();
 };
 
@@ -1115,6 +1125,11 @@ function drawCanvas() {
   cam().zones.forEach(z => { path(z.points, true); ctx.fillStyle = 'rgba(255,160,0,.18)'; ctx.fill(); ctx.strokeStyle = '#ffa000'; ctx.stroke();
     ctx.fillStyle = '#ffa000'; ctx.fillText(z.name, z.points[0][0] * W + 6, z.points[0][1] * H - 8); });
   cam().lines.forEach(l => { path(l.points); ctx.strokeStyle = '#e040fb'; ctx.stroke(); ctx.fillStyle = '#e040fb'; ctx.fillText(l.name, l.points[0][0] * W + 6, l.points[0][1] * H - 8); });
+  cam().gates.forEach(g => { const [[ax, ay], [bx, by]] = g.points;
+    ctx.setLineDash([8, 6]); ctx.strokeStyle = g.ref ? '#00e5a0' : '#ff5252';
+    ctx.strokeRect(Math.min(ax, bx) * W, Math.min(ay, by) * H, Math.abs(bx - ax) * W, Math.abs(by - ay) * H);
+    ctx.setLineDash([]); ctx.fillStyle = g.ref ? '#00e5a0' : '#ff5252';
+    ctx.fillText(g.name, Math.min(ax, bx) * W + 6, Math.min(ay, by) * H - 8); });
   const ins = cam().inspection;
   if (ins && ins.enabled) {
     const [[ax, ay], [bx, by]] = ins.roi;
@@ -1145,6 +1160,27 @@ function renderShapes() {
       drawCanvas();
     });
     r.querySelector('[data-del]').onclick = () => { c[r.dataset.k].splice(r.dataset.i, 1); renderShapes(); drawCanvas(); };
+  });
+  const gateState = name => (ST.cameras?.find(x => x.id === c.id)?.gates || []).find(g => g.name === name)?.state;
+  $('#gates').innerHTML = c.gates.length
+    ? '<small>Name · match threshold (higher = stricter "must look the same to count as closed") · calibrate while the gate is closed</small>' +
+      c.gates.map((g, i) => `<div class="shape" data-i="${i}">
+        <input type="text" data-p="name" value="${esc(g.name)}" aria-label="gate name">
+        <input type="number" data-p="threshold" value="${g.threshold}" min="0.1" max="0.95" step="0.05" aria-label="match threshold">
+        <small>${g.ref ? 'Calibrated' : 'Not calibrated'}${c.id && gateState(g.name) ? ' · ' + gateState(g.name).toUpperCase() : ''}</small>
+        <button class="btn" data-cal ${c.id ? '' : 'disabled title="Save the camera first"'}>Calibrate (closed now)</button>
+        <button class="btn danger" data-del>Delete</button></div>`).join('')
+    : '<small>No gates. A gate watches a drawn rectangle and alerts when its look changes (e.g. opened).</small>';
+  $$('#gates .shape').forEach(r => {
+    const g = c.gates[r.dataset.i];
+    $$('input', r).forEach(inp => inp.oninput = () => { g[inp.dataset.p] = inp.dataset.p === 'threshold' ? +inp.value : inp.value; drawCanvas(); });
+    r.querySelector('[data-del]').onclick = () => { c.gates.splice(r.dataset.i, 1); renderShapes(); drawCanvas(); };
+    r.querySelector('[data-cal]').onclick = async () => {
+      // refetch settings after calibrating: the server stored the real reference patch, and a later
+      // "Save settings" must send that back unchanged rather than overwrite it with a stale placeholder
+      try { await api(`/api/gate/${c.id}/calibrate`, { json: { name: g.name } }); S = await api('/api/settings'); renderEditor(); }
+      catch (e) { alert('Calibrate failed: ' + e.message); }
+    };
   });
 }
 
@@ -1259,6 +1295,10 @@ $('#tg-test').onclick = async () => {
 };
 
 $('#save').onclick = async () => {
+  // an unfinished zone/line/gate draft would otherwise be silently discarded; finish it instead if it's valid
+  if (drawMode === 'zone' && draft.length >= 3) cam().zones.push({ name: `Zone ${cam().zones.length + 1}`, points: draft, classes: ['person'], dwell: 0 });
+  else if (drawMode === 'line' && draft.length === 2) cam().lines.push({ name: `Line ${cam().lines.length + 1}`, points: draft, classes: ['person', 'car'] });
+  else if (drawMode === 'gate' && draft.length === 2) cam().gates.push({ name: `Gate ${cam().gates.length + 1}`, points: draft, threshold: 0.6, ref: null });
   if (drawMode) setDraw(null);
   const body = {
     retention_days:+$('#retention_days').value, min_free_gb:+$('#min_free_gb').value,

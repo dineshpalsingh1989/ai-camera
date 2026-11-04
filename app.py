@@ -43,6 +43,7 @@ SKELETON = [(0, 1), (1, 3), (0, 2), (2, 4), (5, 6), (5, 7), (7, 9), (6, 8), (8, 
             (11, 13), (12, 14), (13, 15), (14, 16)]
 FEATURES = {"smooth_view": True, "objects": True, "custom": False, "pose": False, "faces": False, "blur_faces": False, "heatmap": False, "trails": True}
 QUIET = {"motion"}  # low-value events: snapshot only, no clip, no Telegram
+GATE_PATCH = 16  # grayscale patch side (px) used to compare a gate's current look against its calibrated-closed reference
 
 DEFAULTS = {
     "cameras": [],  # added from Settings
@@ -86,6 +87,7 @@ def load_settings():
         c["features"] = {**FEATURES, **c.get("features", {})}
         c.setdefault("zones", [])
         c.setdefault("lines", [])
+        c.setdefault("gates", [])
         c.setdefault("group", "")
         c["schedule"] = clean_schedule(c.get("schedule", {}))
         c["inspection"] = clean_inspection(c.get("inspection") or {}, COCO + s["custom_classes"])
@@ -119,6 +121,16 @@ def points(v, n_min, n_max):
     if len(pts) < n_min:
         raise ValueError("shape needs more points")
     return pts
+
+
+def clean_gate_ref(v):
+    """A calibrated gate reference is a flattened GATE_PATCH x GATE_PATCH grayscale patch, or None (uncalibrated)."""
+    if not isinstance(v, list) or len(v) != GATE_PATCH * GATE_PATCH:
+        return None
+    try:
+        return [num(x, 0, 255) for x in v]
+    except (TypeError, ValueError):
+        return None
 
 
 def clean_inspection(d, known):
@@ -162,6 +174,9 @@ def clean_settings(d):
                        "dwell": num(z.get("dwell", 0), 0, 3600, int)} for z in c.get("zones", [])],
             "lines": [{"name": str(ln.get("name") or "Line")[:30], "points": points(ln["points"], 2, 2),
                        "classes": [x for x in ln.get("classes", []) if x in known]} for ln in c.get("lines", [])],
+            "gates": [{"name": str(g.get("name") or "Gate")[:30], "points": points(g["points"], 2, 2),
+                       "threshold": num(g.get("threshold", 0.6), 0.1, 0.95),
+                       "ref": clean_gate_ref(g.get("ref"))} for g in c.get("gates", [])],
             "inspection": clean_inspection(c.get("inspection") or {}, known),
         })
     s["cameras"] = cams
@@ -507,6 +522,25 @@ def crossed(p1, p2, a, b):
     return side(a, b, p1) * side(a, b, p2) < 0 and side(p1, p2, a) * side(p1, p2, b) < 0
 
 
+def gate_rect(h, w, points):
+    """A gate's rectangle (fractional corner points) in pixel coordinates, for cropping and for drawing."""
+    (ax, ay), (bx, by) = points
+    x1, x2 = sorted((int(ax * w), int(bx * w)))
+    y1, y2 = sorted((int(ay * h), int(by * h)))
+    return x1, y1, max(x2, x1 + 1), max(y2, y1 + 1)
+
+
+def gate_patch(raw, points):
+    """Downsampled grayscale patch for a gate's rectangle, for look-alike comparison."""
+    h, w = raw.shape[:2]
+    x1, y1, x2, y2 = gate_rect(h, w, points)
+    crop = raw[max(0, y1):y2, max(0, x1):x2]
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.size else np.zeros((1, 1), np.uint8)
+    if gray.size > 1:
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)  # a live RTSP frame is noisier than this tiny patch; denoise first
+    return cv2.resize(gray, (GATE_PATCH, GATE_PATCH))
+
+
 def tag(img, text, x, y, color, fs):
     (tw, th), _ = cv2.getTextSize(text, FONT, fs, 1)
     x, y = max(0, int(x)), max(int(y), th + 4)
@@ -677,6 +711,7 @@ class Camera:
         self.online, self.motion, self.fps, self.fs = False, False, 0.0, 0.5
         self.last_frame, self.last_connected, self.reconnects = None, None, 0
         self.motion_since = None
+        self.gate_state = {}  # name -> {"confirmed", "pending", "since"} for gate-open/closed debouncing
         self.counts, self.zone_counts, self.fall_since = {}, {}, None
         self.last_dets = []  # most recent object detections, reused as suggested boxes when capturing a training photo
         self.prebuf = deque(maxlen=45)  # ~3 s of JPEGs so clips start before the event
@@ -811,6 +846,7 @@ class Camera:
                 tag(f, "MOTION", 8, 30, (0, 120, 255), self.fs)
             else:
                 self.motion_since = None
+            self._check_gates(f, pending, s)
             if not scheduled(cfg):
                 self.insp_flagged.clear()
                 for track in self.tracker.tracks.values():
@@ -838,6 +874,37 @@ class Camera:
             time.sleep(max(0, 1 / s["max_fps"] - (now - t0)))
         if self.clip:
             self._write_clip(None)  # finalize without appending an unblurred raw frame
+
+    def _check_gates(self, f, pending, s):
+        """Compare each calibrated gate's current look to its closed reference; raise an event on a confirmed change."""
+        cfg, now = self.cfg, time.time()
+        h, w = f.shape[:2]
+        alive = set()
+        for g in cfg["gates"]:
+            alive.add(g["name"])
+            st = self.gate_state.setdefault(g["name"], {"confirmed": None, "pending": None, "since": now, "score": None})
+            if not g["ref"] or self.raw is None:
+                continue
+            ref = np.array(g["ref"], np.float32).reshape(GATE_PATCH, GATE_PATCH)
+            score = float(cv2.matchTemplate(gate_patch(self.raw, g["points"]).astype(np.float32), ref, cv2.TM_CCOEFF_NORMED)[0, 0])
+            # a single frame is noisy (compression, auto-exposure flicker); smooth the score before comparing it
+            st["score"] = score if st["score"] is None else st["score"] * 0.8 + score * 0.2
+            state = "closed" if st["score"] >= g["threshold"] else "open"
+            if state != st["pending"]:
+                st["pending"], st["since"] = state, now
+            if state == st["pending"] and state != st["confirmed"] and now - st["since"] >= s["alert_min_seconds"]:
+                had_baseline = st["confirmed"] is not None
+                st["confirmed"] = state
+                if had_baseline:  # skip the very first reading so calibrating doesn't itself raise an alert
+                    pending.append(("gate", f"{g['name']} {state}"))
+            x1, y1, x2, y2 = gate_rect(h, w, g["points"])
+            shown = st["confirmed"] or state
+            color = (0, 0, 255) if shown == "open" else (0, 200, 0)
+            cv2.rectangle(f, (x1, y1), (x2, y2), color, 2)
+            tag(f, f"{g['name']}: {shown.upper()}", x1, y1, color, self.fs)
+        for name in list(self.gate_state):
+            if name not in alive:
+                del self.gate_state[name]
 
     def _draw_faces(self, f, feat):
         if not (feat["faces"] or feat["blur_faces"]):
@@ -1223,6 +1290,25 @@ def record(cid):
     return jsonify(ok=True)
 
 
+@app.route("/api/gate/<cid>/calibrate", methods=["POST"])
+def gate_calibrate(cid):
+    """Store the current look of a drawn gate rectangle as its 'closed' reference."""
+    cam = cameras.get(cid) or abort(404)
+    if cam.raw is None:
+        return jsonify(error="Camera has no picture yet"), 409
+    name = str((request.get_json(force=True) or {}).get("name") or "")
+    gate = next((g for g in cam.cfg["gates"] if g["name"] == name), None)
+    if gate is None:
+        return jsonify(error="Unknown gate"), 404
+    gate["ref"] = [float(x) for x in gate_patch(cam.raw, gate["points"]).flatten()]
+    cam.gate_state.pop(name, None)  # recalibrating starts a fresh baseline, no alert from the jump
+    try:
+        save_settings(settings)
+    except OSError:
+        return jsonify(error="Could not save settings. Check storage space and permissions"), 503
+    return jsonify(ok=True)
+
+
 @app.route("/api/pause/<cid>", methods=["POST"])
 def pause(cid):
     """Pause / resume the AI on one camera; the video keeps streaming."""
@@ -1265,6 +1351,8 @@ def status():
          "group": c.cfg.get("group", ""), "last_frame": c.last_frame, "last_connected": c.last_connected,
          "reconnects": c.reconnects, "alerts_armed": scheduled(c.cfg),
          "recording": c.clip is not None, "counts": c.counts, "zones": c.zone_counts,
+         "gates": [{"name": g["name"], "state": (c.gate_state.get(g["name"]) or {}).get("confirmed")
+                    or ("uncalibrated" if not g["ref"] else "calibrating")} for g in c.cfg["gates"]],
          "features": c.cfg["features"], "paused": c.paused,
          "inspection": {**c.insp, "enabled": c.cfg["inspection"]["enabled"],
                         "trained": c.anomaly.info if c.anomaly else None}} for c in list(cameras.values())])
@@ -1295,7 +1383,7 @@ def api_events():
 
 
 def event_severity(event):
-    return "high" if event["type"] in {"fall", "intrusion", "camera_offline"} else "medium" if event["type"] in {"anomaly", "loitering"} else "low"
+    return "high" if event["type"] in {"fall", "intrusion", "camera_offline"} else "medium" if event["type"] in {"anomaly", "loitering", "gate"} else "low"
 
 
 @app.route("/api/events/<eid>/review", methods=["POST"])

@@ -4,8 +4,9 @@ Self-hosted AI CCTV dashboard: live cameras, object detection and tracking, zone
 pose and fall detection, face blur, heatmap, motion, alerts with photos and clips, Telegram, analytics,
 and quality inspection (anomaly detection, e.g. egg lines). Monitoring and local training run on your device.
 Roboflow upload/download and cloud training are optional, explicit actions.
-Includes camera-outage/recovery alerts, per-camera alert schedules, activity confirmation,
-opt-in recording retention, and configuration backup/restore. Automated checks gate container releases.
+Includes camera-outage/recovery alerts, per-camera alert schedules, activity confirmation, a look-based
+gate open/closed sensor, opt-in recording retention, and configuration backup/restore. Automated checks
+gate container releases.
 
 - **Hailo-8 / 8L** (Raspberry Pi 5, CM5) runs detection, pose and faces on the AI chip.
 - **Any PC without Hailo** falls back to CPU (Ultralytics YOLO), slower.
@@ -116,6 +117,7 @@ on their next server start. Cleanup is disabled by default and does not remove e
 | Activity confirmation | Notifications → Reduce repeated alerts | 2 seconds |
 | Inspection alert grouping | Notifications → Reduce repeated alerts | Enabled; uses Detection's 60-second alert cooldown |
 | Alert schedule | Cameras → select a camera → Alert schedule | Disabled (alerts always active) |
+| Gate sensor (open/closed by look) | Cameras → select a camera → Zones, lines & gates | Off until a gate is drawn and calibrated |
 | Recording cleanup | Recording → Storage retention | Disabled; 30 days when enabled |
 | Free-space reserve | Recording → Storage retention | 1 GiB |
 | Configuration backup/restore | Login → Configuration backup | Manual download and restore |
@@ -171,6 +173,29 @@ The event-history cap remains approximately 500 entries, independent of the rete
 The reserve also prevents new recordings from starting when insufficient space is available, even with
 cleanup disabled. It cannot guarantee free space if other applications fill the disk, or if only protected
 recordings remain. A manual recording reports this condition as an error.
+
+### Gate sensor (open/closed by look)
+
+A gate watches a drawn rectangle for a change in appearance instead of tracking objects — useful for a
+gate, door or barrier that a person-detector can't reliably see as "open" or "closed". In a camera's
+**Zones, lines & gates** editor, click **Draw gate** and click two opposite corners around the gate
+panel itself (avoid sky, moving trees or reflective surfaces in the box). Save, then with the gate
+physically **closed**, click that gate's **Calibrate (closed now)** button and save again.
+
+Every frame, the current look of the box is compared to its calibrated reference (a small blurred,
+downsampled grayscale patch, matched by normalized correlation); a sustained mismatch, held for the
+activity-confirmation setting above, means **open**. The match is smoothed over time to ignore ordinary
+camera noise (compression, auto-exposure flicker) rather than reacting to a single frame. The live video
+draws the box directly on the feed, labelled OPEN (red) or CLOSED (green), alongside a live status next
+to each gate in its editor row (uncalibrated / calibrating / open / closed).
+
+Gate open/closed transitions raise a normal `gate` event — Telegram, siren, Event history, alert
+cooldown and the alert schedule all apply exactly as they do for object/intrusion alerts. This is a
+visual look-alike check, not true object understanding: a strong lighting change across the exact drawn
+box (sun, headlights) can occasionally misread as "open" even if nothing moved. Recalibrate after
+repositioning a camera, or raise the match threshold (and tighten the box) if you see false opens. A
+physical sensor (e.g. a magnetic reed switch wired to one of the IRIV board's digital inputs, shown
+on the in-app Hardware page) stays the more reliable option where that matters.
 
 ## Configuration backup and restore
 
